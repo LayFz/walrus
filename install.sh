@@ -1,20 +1,31 @@
-#!/bin/bash
+#!/usr/bin/env bash
+#
+# walrus installer
+# curl -sSL https://raw.githubusercontent.com/LayFz/walrus/main/install.sh | sudo bash
+#
+
 set -euo pipefail
 
-# ============================================================
-#  walrus 远程安装脚本
-#  curl -sSL https://raw.githubusercontent.com/layfz/walrus/main/install.sh | bash
-# ============================================================
+readonly REPO="LayFz/walrus"
+readonly BRANCH="main"
+readonly INSTALL_BIN="/usr/local/bin/walrus"
+readonly INSTALL_DIR="/opt/walrus"
+readonly RAW_BASE="https://raw.githubusercontent.com/${REPO}/${BRANCH}"
 
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-CYAN='\033[0;36m'
-BOLD='\033[1m'
-DIM='\033[2m'
-NC='\033[0m'
+# Colors
+if [[ -t 1 ]]; then
+  C_RED=$'\033[0;31m' C_GREEN=$'\033[0;32m' C_CYAN=$'\033[0;36m'
+  C_BOLD=$'\033[1m' C_DIM=$'\033[2m' C_RESET=$'\033[0m'
+else
+  C_RED="" C_GREEN="" C_CYAN="" C_BOLD="" C_DIM="" C_RESET=""
+fi
 
-echo -e "${BOLD}"
-cat << 'ART'
+_ok()  { printf " ${C_GREEN}✓${C_RESET} %s\n" "$1"; }
+_run() { printf " ${C_CYAN}→${C_RESET} %s\n" "$1"; }
+_err() { printf " ${C_RED}✗${C_RESET} %s\n" "$1" >&2; }
+
+printf "%s" "${C_BOLD}"
+cat <<'BANNER'
 
   ██╗    ██╗ █████╗ ██╗     ██████╗ ██╗   ██╗███████╗
   ██║    ██║██╔══██╗██║     ██╔══██╗██║   ██║██╔════╝
@@ -22,51 +33,115 @@ cat << 'ART'
   ██║███╗██║██╔══██║██║     ██╔══██╗██║   ██║╚════██║
   ╚███╔███╔╝██║  ██║███████╗██║  ██║╚██████╔╝███████║
    ╚══╝╚══╝ ╚═╝  ╚═╝╚══════╝╚═╝  ╚═╝ ╚═════╝ ╚══════╝
-ART
-echo -e "${NC}"
-echo -e "  ${DIM}Installing walrus - PostgreSQL backup buddy for indie hackers${NC}"
-echo ""
+BANNER
+printf "%s\n" "${C_RESET}"
+printf "  ${C_DIM}PostgreSQL backup buddy for indie hackers${C_RESET}\n\n"
 
-# 检测 root
-if [ "$(id -u)" -ne 0 ]; then
-  echo -e " ${RED}✗${NC} 请使用 root 用户运行"
-  echo -e "   ${DIM}sudo bash -c \"\$(curl -sSL https://raw.githubusercontent.com/layfz/walrus/main/install.sh)\"${NC}"
+# ── Root check ──
+
+if [[ "$(id -u)" -ne 0 ]]; then
+  _err "需要 root 权限"
+  printf "\n   ${C_DIM}curl -sSL %s/install.sh | sudo bash${C_RESET}\n\n" "$RAW_BASE"
   exit 1
 fi
 
-# 下载 walrus 主程序
-echo -e " ${CYAN}→${NC} 下载 walrus..."
+# ── Download helper ──
 
-DOWNLOAD_URL="https://raw.githubusercontent.com/layfz/walrus/main/walrus"
+download() {
+  local url="$1" dest="$2"
+  if command -v curl &>/dev/null; then
+    local code
+    code=$(curl -sSL -w "%{http_code}" "$url" -o "$dest")
+    if [[ "$code" != "200" ]]; then
+      rm -f "$dest"
+      return 1
+    fi
+  elif command -v wget &>/dev/null; then
+    wget -qO "$dest" "$url" || return 1
+  else
+    _err "需要 curl 或 wget"
+    exit 1
+  fi
+}
 
-if command -v curl &>/dev/null; then
-  curl -sSL "$DOWNLOAD_URL" -o /usr/local/bin/walrus
-elif command -v wget &>/dev/null; then
-  wget -qO /usr/local/bin/walrus "$DOWNLOAD_URL"
+# ── Create directory structure ──
+
+_run "创建目录结构..."
+
+mkdir -p "${INSTALL_DIR}"/{conf,data,logs,locks,lib,commands}
+
+# ── Download all files ──
+
+_run "下载 walrus..."
+
+# File list: path relative to repo root
+FILES=(
+  "walrus"
+  "lib/constants.sh"
+  "lib/colors.sh"
+  "lib/logger.sh"
+  "lib/cleanup.sh"
+  "lib/utils.sh"
+  "lib/lock.sh"
+  "lib/project.sh"
+  "lib/r2.sh"
+  "commands/config.sh"
+  "commands/init.sh"
+  "commands/backup.sh"
+  "commands/sync.sh"
+  "commands/restore.sh"
+  "commands/status.sh"
+  "commands/list.sh"
+  "commands/logs.sh"
+  "commands/remove.sh"
+  "commands/service.sh"
+  "commands/help.sh"
+)
+
+fail_count=0
+for f in "${FILES[@]}"; do
+  dest="${INSTALL_DIR}/${f}"
+  mkdir -p "$(dirname "$dest")"
+  if download "${RAW_BASE}/${f}" "$dest"; then
+    chmod +x "$dest" 2>/dev/null || true
+  else
+    _err "下载失败: $f"
+    fail_count=$((fail_count + 1))
+  fi
+done
+
+if [[ $fail_count -gt 0 ]]; then
+  _err "有 ${fail_count} 个文件下载失败"
+  exit 1
+fi
+
+# ── Install binary ──
+
+cp "${INSTALL_DIR}/walrus" "${INSTALL_BIN}"
+chmod +x "${INSTALL_BIN}"
+
+_ok "文件下载完成 (${#FILES[@]} 个)"
+
+# ── Verify ──
+
+if walrus version &>/dev/null; then
+  VERSION=$(walrus version)
+  _ok "已安装: ${VERSION}"
 else
-  echo -e " ${RED}✗${NC} 需要 curl 或 wget"
+  _err "安装验证失败"
   exit 1
 fi
 
-chmod +x /usr/local/bin/walrus
+_ok "数据目录: ${INSTALL_DIR}"
 
-# 创建数据目录
-mkdir -p /opt/walrus/{conf,data,logs}
+# ── Done ──
 
-echo -e " ${GREEN}✓${NC} walrus 已安装到 /usr/local/bin/walrus"
-echo ""
-echo -e " ${GREEN}${BOLD}安装完成！${NC} 🦭"
-echo ""
-echo -e "  开始使用:"
-echo ""
-echo -e "  ${DIM}walrus init \\${NC}"
-echo -e "  ${DIM}  --project myapp \\${NC}"
-echo -e "  ${DIM}  --container postgres \\${NC}"
-echo -e "  ${DIM}  --user myuser \\${NC}"
-echo -e "  ${DIM}  --db mydb \\${NC}"
-echo -e "  ${DIM}  --r2-access-key <key> \\${NC}"
-echo -e "  ${DIM}  --r2-secret-key <secret> \\${NC}"
-echo -e "  ${DIM}  --r2-endpoint <endpoint>${NC}"
-echo ""
-echo -e "  更多命令: ${BOLD}walrus help${NC}"
-echo ""
+printf "\n ${C_GREEN}${C_BOLD}安装完成!${C_RESET} 🦭\n\n"
+
+printf " ${C_BOLD}下一步${C_RESET}\n\n"
+printf "   ${C_DIM}# 1. 配置 R2 存储${C_RESET}\n"
+printf "   walrus config\n\n"
+printf "   ${C_DIM}# 2. 注册项目${C_RESET}\n"
+printf "   walrus init\n\n"
+printf "   ${C_DIM}# 查看帮助${C_RESET}\n"
+printf "   walrus help\n\n"

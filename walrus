@@ -1,714 +1,114 @@
-#!/bin/bash
+#!/usr/bin/env bash
+#
+# walrus - PostgreSQL backup buddy for indie hackers
+# https://github.com/LayFz/walrus
+#
+# Usage: walrus <command> [options]
+# Run 'walrus help' for available commands.
+
 set -euo pipefail
 
-# ============================================================
-#  walrus - PostgreSQL backup buddy for indie hackers
-#  https://github.com/layfz/walrus
-# ============================================================
+# ─── Resolve install location ────────────────────────────
 
-VERSION="1.0.0"
-INSTALL_DIR="/opt/walrus"
-CONF_DIR="$INSTALL_DIR/conf"
-SCRIPTS_DIR="$INSTALL_DIR/scripts"
-DATA_DIR="$INSTALL_DIR/data"
-LOG_DIR="$INSTALL_DIR/logs"
-R2_REMOTE_NAME="walrus_r2"
+# walrus can run from source (development) or from /usr/local/bin (installed).
+# Libs are co-located in source, or under /opt/walrus/lib when installed.
 
-# ==================== 颜色 ====================
+_walrus_resolve_root() {
+  local self_path
+  self_path="$(readlink -f "${BASH_SOURCE[0]}" 2>/dev/null || realpath "${BASH_SOURCE[0]}" 2>/dev/null || echo "${BASH_SOURCE[0]}")"
+  local self_dir
+  self_dir="$(cd "$(dirname "$self_path")" && pwd)"
 
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-CYAN='\033[0;36m'
-BOLD='\033[1m'
-DIM='\033[2m'
-NC='\033[0m'
-
-# ==================== 工具函数 ====================
-
-log_ok()   { echo -e " ${GREEN}✓${NC} $1"; }
-log_warn() { echo -e " ${YELLOW}!${NC} $1"; }
-log_err()  { echo -e " ${RED}✗${NC} $1"; }
-log_run()  { echo -e " ${CYAN}→${NC} $1"; }
-log_dim()  { echo -e " ${DIM}$1${NC}"; }
-
-banner() {
-  echo -e "${BOLD}"
-  cat << 'ART'
-
-  ██╗    ██╗ █████╗ ██╗     ██████╗ ██╗   ██╗███████╗
-  ██║    ██║██╔══██╗██║     ██╔══██╗██║   ██║██╔════╝
-  ██║ █╗ ██║███████║██║     ██████╔╝██║   ██║███████╗
-  ██║███╗██║██╔══██║██║     ██╔══██╗██║   ██║╚════██║
-  ╚███╔███╔╝██║  ██║███████╗██║  ██║╚██████╔╝███████║
-   ╚══╝╚══╝ ╚═╝  ╚═╝╚══════╝╚═╝  ╚═╝ ╚═════╝ ╚══════╝
-ART
-  echo -e "${NC}"
-  echo -e "  ${DIM}PostgreSQL backup buddy for indie hackers${NC}"
-  echo -e "  ${DIM}v${VERSION}${NC}"
-  echo ""
-}
-
-# 读取项目配置
-load_project_conf() {
-  local project="$1"
-  local conf_file="$CONF_DIR/${project}.conf"
-  if [ ! -f "$conf_file" ]; then
-    log_err "项目 '$project' 未注册，请先运行: walrus init"
-    exit 1
-  fi
-  source "$conf_file"
-}
-
-# 列出所有已注册项目
-list_projects() {
-  if [ ! -d "$CONF_DIR" ] || [ -z "$(ls -A "$CONF_DIR" 2>/dev/null)" ]; then
+  # Source tree: ./lib/ exists next to the walrus script
+  if [[ -d "${self_dir}/lib" ]]; then
+    echo "$self_dir"
     return
   fi
-  for f in "$CONF_DIR"/*.conf; do
-    basename "$f" .conf
-  done
+
+  # Installed: libs are in /opt/walrus/lib
+  if [[ -d "/opt/walrus/lib" ]]; then
+    echo "/opt/walrus"
+    return
+  fi
+
+  echo >&2 "walrus: 找不到 lib 目录，请重新安装: walrus help"
+  exit 1
 }
 
-# ==================== 命令: init ====================
+readonly WALRUS_ROOT="$(_walrus_resolve_root)"
 
-cmd_init() {
-  local PROJECT="" CONTAINER="" DB_USER="" DB_NAME=""
-  local R2_ACCESS_KEY="" R2_SECRET_KEY="" R2_ENDPOINT=""
-  local BWLIMIT="2M" DAYS_KEEP=7 R2_BUCKET="backup"
+# ─── Load modules ────────────────────────────────────────
 
-  while [[ $# -gt 0 ]]; do
-    case $1 in
-      --project)       PROJECT="$2"; shift 2;;
-      --container)     CONTAINER="$2"; shift 2;;
-      --user)          DB_USER="$2"; shift 2;;
-      --db)            DB_NAME="$2"; shift 2;;
-      --r2-access-key) R2_ACCESS_KEY="$2"; shift 2;;
-      --r2-secret-key) R2_SECRET_KEY="$2"; shift 2;;
-      --r2-endpoint)   R2_ENDPOINT="$2"; shift 2;;
-      --bwlimit)       BWLIMIT="$2"; shift 2;;
-      --keep)          DAYS_KEEP="$2"; shift 2;;
-      --bucket)        R2_BUCKET="$2"; shift 2;;
-      *) log_err "未知参数: $1"; exit 1;;
-    esac
-  done
+# Order matters: constants first, then colors, then logger (uses colors),
+# then cleanup (uses logger), then everything else.
 
-  if [ -z "$PROJECT" ] || [ -z "$CONTAINER" ] || [ -z "$DB_USER" ] || [ -z "$DB_NAME" ]; then
-    echo "用法: walrus init --project <名称> --container <容器名> --user <用户> --db <数据库>"
-    echo ""
-    echo "必填:"
-    echo "  --project       项目名称"
-    echo "  --container     PostgreSQL Docker 容器名"
-    echo "  --user          数据库用户名"
-    echo "  --db            数据库名"
-    echo ""
-    echo "R2 配置（首次必填）:"
-    echo "  --r2-access-key R2 Access Key ID"
-    echo "  --r2-secret-key R2 Secret Access Key"
-    echo "  --r2-endpoint   R2 Endpoint URL"
-    echo ""
-    echo "可选:"
-    echo "  --bwlimit       上传限速 (默认: 2M)"
-    echo "  --keep          保留天数 (默认: 7)"
-    echo "  --bucket        R2 Bucket 名 (默认: backup)"
-    exit 1
-  fi
+# shellcheck source=lib/constants.sh
+source "${WALRUS_ROOT}/lib/constants.sh"
+# shellcheck source=lib/colors.sh
+source "${WALRUS_ROOT}/lib/colors.sh"
+# shellcheck source=lib/logger.sh
+source "${WALRUS_ROOT}/lib/logger.sh"
+# shellcheck source=lib/cleanup.sh
+source "${WALRUS_ROOT}/lib/cleanup.sh"
+# shellcheck source=lib/utils.sh
+source "${WALRUS_ROOT}/lib/utils.sh"
+# shellcheck source=lib/lock.sh
+source "${WALRUS_ROOT}/lib/lock.sh"
+# shellcheck source=lib/project.sh
+source "${WALRUS_ROOT}/lib/project.sh"
+# shellcheck source=lib/r2.sh
+source "${WALRUS_ROOT}/lib/r2.sh"
 
-  banner
+# Commands
+# shellcheck source=commands/config.sh
+source "${WALRUS_ROOT}/commands/config.sh"
+# shellcheck source=commands/init.sh
+source "${WALRUS_ROOT}/commands/init.sh"
+# shellcheck source=commands/backup.sh
+source "${WALRUS_ROOT}/commands/backup.sh"
+# shellcheck source=commands/sync.sh
+source "${WALRUS_ROOT}/commands/sync.sh"
+# shellcheck source=commands/restore.sh
+source "${WALRUS_ROOT}/commands/restore.sh"
+# shellcheck source=commands/status.sh
+source "${WALRUS_ROOT}/commands/status.sh"
+# shellcheck source=commands/list.sh
+source "${WALRUS_ROOT}/commands/list.sh"
+# shellcheck source=commands/logs.sh
+source "${WALRUS_ROOT}/commands/logs.sh"
+# shellcheck source=commands/remove.sh
+source "${WALRUS_ROOT}/commands/remove.sh"
+# shellcheck source=commands/service.sh
+source "${WALRUS_ROOT}/commands/service.sh"
+# shellcheck source=commands/help.sh
+source "${WALRUS_ROOT}/commands/help.sh"
 
-  echo -e " ${BOLD}初始化项目: $PROJECT${NC}"
-  echo ""
-  log_dim "容器: $CONTAINER | 用户: $DB_USER | 数据库: $DB_NAME"
-  log_dim "限速: $BWLIMIT | 保留: ${DAYS_KEEP}天 | Bucket: $R2_BUCKET"
-  echo ""
+# ─── Command dispatch ───────────────────────────────────
 
-  # ----- 环境检测 -----
+main() {
+  local command="${1:-}"
+  shift || true
 
-  log_run "检测环境..."
-
-  if [ "$(id -u)" -ne 0 ]; then
-    log_err "请使用 root 用户运行"
-    exit 1
-  fi
-  log_ok "root 用户"
-
-  if ! command -v docker &>/dev/null; then
-    log_err "Docker 未安装"
-    exit 1
-  fi
-  log_ok "Docker 已安装"
-
-  if ! docker ps --format '{{.Names}}' | grep -q "^${CONTAINER}$"; then
-    log_err "容器 '$CONTAINER' 未运行"
-    docker ps --format '  - {{.Names}} ({{.Image}})'
-    exit 1
-  fi
-  log_ok "容器 '$CONTAINER' 运行中"
-
-  if ! docker exec "$CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" -c "SELECT 1;" &>/dev/null; then
-    log_err "数据库连接失败 (用户: $DB_USER, 数据库: $DB_NAME)"
-    exit 1
-  fi
-
-  PG_VERSION=$(docker exec "$CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" -t -c "SHOW server_version;" | xargs)
-  log_ok "数据库连接正常 (PostgreSQL $PG_VERSION)"
-  echo ""
-
-  # ----- rclone -----
-
-  log_run "配置 rclone..."
-
-  if ! command -v rclone &>/dev/null; then
-    log_warn "rclone 未安装，正在安装..."
-    curl -sSL https://rclone.org/install.sh | bash >/dev/null 2>&1
-    log_ok "rclone 安装完成"
-  else
-    log_ok "rclone 已安装"
-  fi
-
-  if [ -n "$R2_ACCESS_KEY" ] && [ -n "$R2_SECRET_KEY" ] && [ -n "$R2_ENDPOINT" ]; then
-    if rclone listremotes | grep -q "^${R2_REMOTE_NAME}:$"; then
-      rclone config delete "$R2_REMOTE_NAME" >/dev/null 2>&1
-    fi
-
-    rclone config create "$R2_REMOTE_NAME" s3 \
-      provider=Cloudflare \
-      access_key_id="$R2_ACCESS_KEY" \
-      secret_access_key="$R2_SECRET_KEY" \
-      endpoint="$R2_ENDPOINT" \
-      acl=private \
-      no_check_bucket=true \
-      --quiet
-
-    log_ok "R2 配置完成"
-  elif ! rclone listremotes | grep -q "^${R2_REMOTE_NAME}:$"; then
-    log_err "rclone 未配置 R2，请提供 --r2-access-key, --r2-secret-key, --r2-endpoint"
-    exit 1
-  else
-    log_ok "使用已有 R2 配置"
-  fi
-
-  if ! rclone lsd "${R2_REMOTE_NAME}:" &>/dev/null; then
-    log_err "R2 连接失败，请检查凭证"
-    exit 1
-  fi
-
-  if ! rclone lsd "${R2_REMOTE_NAME}:" 2>/dev/null | grep -q " ${R2_BUCKET}$"; then
-    rclone mkdir "${R2_REMOTE_NAME}:${R2_BUCKET}" 2>/dev/null
-  fi
-  log_ok "R2 连接正常，Bucket '$R2_BUCKET' 就绪"
-  echo ""
-
-  # ----- 目录 & 配置 -----
-
-  log_run "创建目录..."
-
-  mkdir -p "$CONF_DIR" "$SCRIPTS_DIR"
-  mkdir -p "$DATA_DIR/base/$PROJECT"
-  mkdir -p "$DATA_DIR/wal/$PROJECT"
-  mkdir -p "$LOG_DIR/$PROJECT"
-
-  # 写入项目配置
-  cat > "$CONF_DIR/${PROJECT}.conf" << CONF
-PROJECT="$PROJECT"
-CONTAINER="$CONTAINER"
-DB_USER="$DB_USER"
-DB_NAME="$DB_NAME"
-BWLIMIT="$BWLIMIT"
-DAYS_KEEP=$DAYS_KEEP
-R2_REMOTE="$R2_REMOTE_NAME"
-R2_BUCKET="$R2_BUCKET"
-CONF
-
-  log_ok "项目配置已保存"
-
-  # ----- WAL 归档 -----
-
-  log_run "配置 WAL 归档..."
-
-  NEED_RESTART=false
-  CURRENT_ARCHIVE=$(docker exec "$CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" -t -c "SHOW archive_mode;" | xargs)
-
-  if [ "$CURRENT_ARCHIVE" = "on" ]; then
-    log_ok "WAL 归档已开启"
-  else
-    docker exec "$CONTAINER" mkdir -p /var/lib/postgresql/wal_archive
-    docker exec "$CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" -c "ALTER SYSTEM SET wal_level = 'replica';" >/dev/null
-    docker exec "$CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" -c "ALTER SYSTEM SET archive_mode = 'on';" >/dev/null
-    docker exec "$CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" -c "ALTER SYSTEM SET archive_command = 'cp %p /var/lib/postgresql/wal_archive/%f';" >/dev/null
-    NEED_RESTART=true
-    log_ok "WAL 归档配置写入"
-  fi
-  echo ""
-
-  # ----- 定时任务 -----
-
-  log_run "配置定时任务..."
-
-  CRON_TAG="# walrus:$PROJECT"
-  crontab -l 2>/dev/null | grep -v "$CRON_TAG" > /tmp/walrus_cron || true
-
-  cat >> /tmp/walrus_cron << CRON
-*/5 * * * * /usr/local/bin/walrus sync --project $PROJECT >> $LOG_DIR/$PROJECT/sync.log 2>&1 $CRON_TAG
-0 3 * * * /usr/local/bin/walrus backup --project $PROJECT >> $LOG_DIR/$PROJECT/backup.log 2>&1 $CRON_TAG
-CRON
-
-  crontab /tmp/walrus_cron
-  rm -f /tmp/walrus_cron
-
-  log_ok "定时任务已配置"
-  log_dim "每 5 分钟: WAL 同步"
-  log_dim "每天 03:00: 全量备份 + 清理"
-  echo ""
-
-  # ----- 安装 walrus 命令 -----
-
-  # 获取当前脚本的真实路径
-  SELF_PATH="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
-  if [ "$SELF_PATH" != "/usr/local/bin/walrus" ]; then
-    cp "$SELF_PATH" /usr/local/bin/walrus
-    chmod +x /usr/local/bin/walrus
-    log_ok "walrus 命令已安装到 /usr/local/bin/walrus"
-  fi
-
-  # ----- 重启容器 -----
-
-  if [ "$NEED_RESTART" = true ]; then
-    log_run "重启容器 '$CONTAINER'..."
-    docker restart "$CONTAINER" >/dev/null 2>&1
-    sleep 3
-
-    ARCHIVE_CHECK=$(docker exec "$CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" -t -c "SHOW archive_mode;" | xargs)
-    if [ "$ARCHIVE_CHECK" = "on" ]; then
-      log_ok "WAL 归档已生效"
-    else
-      log_err "WAL 归档启用失败"
+  case "$command" in
+    config)                cmd_config "$@" ;;
+    init)                  cmd_init "$@" ;;
+    backup)                cmd_backup "$@" ;;
+    sync)                  cmd_sync "$@" ;;
+    restore)               cmd_restore "$@" ;;
+    status|st)             cmd_status "$@" ;;
+    list|ls)               cmd_list "$@" ;;
+    logs|log)              cmd_logs "$@" ;;
+    service|svc)           cmd_service "$@" ;;
+    remove|rm)             cmd_remove "$@" ;;
+    help|-h|--help|"")     cmd_help ;;
+    version|-v|--version)  echo "walrus v${WALRUS_VERSION}" ;;
+    *)
+      log_err "未知命令: ${command}"
+      echo ""
+      log_dim "运行 'walrus help' 查看可用命令"
       exit 1
-    fi
-    echo ""
-  fi
-
-  # ----- 测试 -----
-
-  log_run "测试备份..."
-
-  docker exec "$CONTAINER" mkdir -p /var/lib/postgresql/wal_archive
-  docker exec "$CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" -c "SELECT pg_switch_wal();" &>/dev/null || true
-  sleep 2
-
-  cmd_sync --project "$PROJECT"
-  log_ok "WAL 同步测试通过"
-
-  cmd_backup --project "$PROJECT"
-  log_ok "全量备份测试通过"
-
-  R2_FILES=$(rclone lsf "${R2_REMOTE_NAME}:${R2_BUCKET}/${PROJECT}/base/" 2>/dev/null | wc -l | xargs)
-  if [ "$R2_FILES" -gt 0 ]; then
-    log_ok "R2 上传验证通过 ($R2_FILES 个备份)"
-  else
-    log_err "R2 上传验证失败"
-    exit 1
-  fi
-
-  echo ""
-  echo -e " ${GREEN}${BOLD}搞定！${NC} $PROJECT 已在 walrus 的保护下 🦭"
-  echo ""
-  log_dim "全量备份:  walrus backup  --project $PROJECT"
-  log_dim "WAL同步:   walrus sync    --project $PROJECT"
-  log_dim "查看状态:  walrus status"
-  log_dim "恢复数据:  walrus restore --project $PROJECT --password <密码>"
-  echo ""
+      ;;
+  esac
 }
 
-# ==================== 命令: backup ====================
-
-cmd_backup() {
-  local PROJECT=""
-
-  while [[ $# -gt 0 ]]; do
-    case $1 in
-      --project) PROJECT="$2"; shift 2;;
-      *) shift;;
-    esac
-  done
-
-  if [ -z "$PROJECT" ]; then
-    echo "用法: walrus backup --project <名称>"
-    exit 1
-  fi
-
-  load_project_conf "$PROJECT"
-
-  DATE=$(date +%Y%m%d_%H%M%S)
-  LOCAL_DIR="$DATA_DIR/base/$PROJECT"
-  WAL_DIR="$DATA_DIR/wal/$PROJECT"
-  R2_PATH="${R2_REMOTE}:${R2_BUCKET}/${PROJECT}"
-  LOGFILE="$LOG_DIR/$PROJECT/backup.log"
-
-  log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')][$PROJECT] $1" | tee -a "$LOGFILE"; }
-
-  mkdir -p "$LOCAL_DIR"
-
-  # 全量物理备份
-  log "开始 base backup..."
-  docker exec "$CONTAINER" sh -c "rm -rf /tmp/walrus_backup && mkdir -p /tmp/walrus_backup"
-  docker exec "$CONTAINER" pg_basebackup \
-    -U "$DB_USER" -D /tmp/walrus_backup -Ft -z \
-    --checkpoint=spread \
-    --max-rate=30M
-
-  docker cp "$CONTAINER:/tmp/walrus_backup/base.tar.gz" "$LOCAL_DIR/base_${DATE}.tar.gz"
-  docker exec "$CONTAINER" rm -rf /tmp/walrus_backup
-
-  SIZE=$(du -sh "$LOCAL_DIR/base_${DATE}.tar.gz" | cut -f1)
-  log "base backup 完成 ($SIZE)"
-
-  # 上传
-  log "上传中 (限速 $BWLIMIT)..."
-  rclone copy "$LOCAL_DIR/base_${DATE}.tar.gz" "$R2_PATH/base/" \
-    --bwlimit "$BWLIMIT" --checksum
-  log "上传完成"
-
-  # 顺便同步 WAL
-  if [ -d "$WAL_DIR" ] && [ "$(ls -A "$WAL_DIR" 2>/dev/null)" ]; then
-    log "同步 WAL..."
-    rclone copy "$WAL_DIR/" "$R2_PATH/wal/" --bwlimit "$BWLIMIT" --checksum
-    log "WAL 同步完成"
-  fi
-
-  # 清理
-  log "清理 ${DAYS_KEEP} 天前的备份..."
-
-  find "$LOCAL_DIR" -name "base_*.tar.gz" -mtime +$DAYS_KEEP -delete 2>/dev/null || true
-  find "$WAL_DIR" -type f -mtime +$DAYS_KEEP -delete 2>/dev/null || true
-
-  CUTOFF=$(date -d "-${DAYS_KEEP} days" +%Y%m%d 2>/dev/null || date -v-${DAYS_KEEP}d +%Y%m%d)
-  rclone lsf "$R2_PATH/base/" 2>/dev/null | while read -r file; do
-    FILE_DATE=$(echo "$file" | grep -oP '\d{8}' | head -1 || true)
-    if [ -n "$FILE_DATE" ] && [ "$FILE_DATE" -lt "$CUTOFF" ] 2>/dev/null; then
-      log "删除过期: $file"
-      rclone deletefile "$R2_PATH/base/$file"
-    fi
-  done
-
-  rclone delete "$R2_PATH/wal/" --min-age "${DAYS_KEEP}d" 2>/dev/null || true
-
-  log "完成 ✓"
-}
-
-# ==================== 命令: sync ====================
-
-cmd_sync() {
-  local PROJECT=""
-
-  while [[ $# -gt 0 ]]; do
-    case $1 in
-      --project) PROJECT="$2"; shift 2;;
-      *) shift;;
-    esac
-  done
-
-  if [ -z "$PROJECT" ]; then
-    echo "用法: walrus sync --project <名称>"
-    exit 1
-  fi
-
-  load_project_conf "$PROJECT"
-
-  WAL_DIR="$DATA_DIR/wal/$PROJECT"
-  R2_PATH="${R2_REMOTE}:${R2_BUCKET}/${PROJECT}/wal"
-
-  mkdir -p "$WAL_DIR"
-
-  # 从容器拷贝 WAL
-  docker exec "$CONTAINER" mkdir -p /var/lib/postgresql/wal_archive 2>/dev/null || true
-  docker cp "$CONTAINER:/var/lib/postgresql/wal_archive/." "$WAL_DIR/" 2>/dev/null || true
-  docker exec "$CONTAINER" sh -c 'rm -f /var/lib/postgresql/wal_archive/*' 2>/dev/null || true
-
-  # 上传新增 WAL
-  if [ "$(ls -A "$WAL_DIR" 2>/dev/null)" ]; then
-    rclone copy "$WAL_DIR/" "$R2_PATH/" --bwlimit "$BWLIMIT" --checksum --quiet
-  fi
-}
-
-# ==================== 命令: restore ====================
-
-cmd_restore() {
-  local PROJECT="" DB_PASS="" TARGET_TIME="" DL_BWLIMIT="50M"
-
-  while [[ $# -gt 0 ]]; do
-    case $1 in
-      --project)     PROJECT="$2"; shift 2;;
-      --password)    DB_PASS="$2"; shift 2;;
-      --target-time) TARGET_TIME="$2"; shift 2;;
-      --bwlimit)     DL_BWLIMIT="$2"; shift 2;;
-      *) shift;;
-    esac
-  done
-
-  if [ -z "$PROJECT" ] || [ -z "$DB_PASS" ]; then
-    echo "用法: walrus restore --project <名称> --password <密码> [--target-time \"2026-04-22 14:30:00+08\"]"
-    exit 1
-  fi
-
-  load_project_conf "$PROJECT"
-
-  banner
-
-  R2_PATH="${R2_REMOTE}:${R2_BUCKET}/${PROJECT}"
-  WORK_DIR="/opt/walrus_restore/$PROJECT"
-
-  echo -e " ${BOLD}恢复项目: $PROJECT${NC}"
-  echo ""
-
-  # 查找最新备份
-  log_run "查找最新备份..."
-  LATEST_BASE=$(rclone lsf "$R2_PATH/base/" 2>/dev/null | sort | tail -1)
-  if [ -z "$LATEST_BASE" ]; then
-    log_err "R2 上没有找到 $PROJECT 的备份"
-    exit 1
-  fi
-  log_ok "最新备份: $LATEST_BASE"
-
-  # 下载
-  rm -rf "$WORK_DIR"
-  mkdir -p "$WORK_DIR"/{base,wal,pgdata}
-
-  log_run "下载 base backup..."
-  rclone copy "$R2_PATH/base/$LATEST_BASE" "$WORK_DIR/base/" --bwlimit "$DL_BWLIMIT" --progress
-  log_ok "base backup 下载完成"
-
-  log_run "下载 WAL..."
-  rclone copy "$R2_PATH/wal/" "$WORK_DIR/wal/" --bwlimit "$DL_BWLIMIT" --progress
-  log_ok "WAL 下载完成"
-
-  # 解压 & 配置
-  log_run "解压并配置..."
-  tar xzf "$WORK_DIR/base/$LATEST_BASE" -C "$WORK_DIR/pgdata/"
-
-  mkdir -p "$WORK_DIR/pgdata/pg_wal"
-  cp "$WORK_DIR"/wal/* "$WORK_DIR/pgdata/pg_wal/" 2>/dev/null || true
-
-  touch "$WORK_DIR/pgdata/recovery.signal"
-
-  RESTORE_CONF="restore_command = 'cp /var/lib/postgresql/data/pg_wal/%f %p'"
-  if [ -n "$TARGET_TIME" ]; then
-    RESTORE_CONF="${RESTORE_CONF}
-recovery_target_time = '${TARGET_TIME}'"
-  else
-    RESTORE_CONF="${RESTORE_CONF}
-recovery_target = 'immediate'"
-  fi
-  echo "$RESTORE_CONF" >> "$WORK_DIR/pgdata/postgresql.auto.conf"
-
-  chown -R 999:999 "$WORK_DIR/pgdata"
-  log_ok "恢复配置完成"
-
-  # 启动
-  log_run "启动 PostgreSQL..."
-
-  RESTORE_CONTAINER="walrus_${PROJECT}_restore"
-  docker rm -f "$RESTORE_CONTAINER" 2>/dev/null || true
-
-  docker run -d \
-    --name "$RESTORE_CONTAINER" \
-    -v "$WORK_DIR/pgdata:/var/lib/postgresql/data" \
-    -e POSTGRES_USER="$DB_USER" \
-    -e POSTGRES_PASSWORD="$DB_PASS" \
-    -p 15432:5432 \
-    postgres:16
-
-  echo ""
-  log_run "等待数据库启动..."
-  sleep 5
-
-  if docker exec "$RESTORE_CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" -c "SELECT 1;" &>/dev/null; then
-    echo ""
-    echo -e " ${GREEN}${BOLD}恢复成功！${NC} 🦭"
-    echo ""
-    log_dim "连接: docker exec $RESTORE_CONTAINER psql -U $DB_USER -d $DB_NAME"
-    log_dim "端口: 15432"
-    echo ""
-  else
-    echo ""
-    log_warn "数据库可能还在恢复中，查看日志:"
-    log_dim "docker logs $RESTORE_CONTAINER"
-  fi
-}
-
-# ==================== 命令: status ====================
-
-cmd_status() {
-  banner
-
-  PROJECTS=$(list_projects)
-
-  if [ -z "$PROJECTS" ]; then
-    log_warn "暂无已注册项目"
-    echo ""
-    log_dim "开始使用: walrus init --project <名称> --container <容器名> --user <用户> --db <数据库>"
-    echo ""
-    exit 0
-  fi
-
-  echo -e " ${BOLD}已注册项目${NC}"
-  echo ""
-
-  for proj in $PROJECTS; do
-    source "$CONF_DIR/${proj}.conf"
-
-    # 容器状态
-    if docker ps --format '{{.Names}}' 2>/dev/null | grep -q "^${CONTAINER}$"; then
-      C_STATUS="${GREEN}运行中${NC}"
-    else
-      C_STATUS="${RED}已停止${NC}"
-    fi
-
-    # 本地备份
-    LOCAL_COUNT=$(find "$DATA_DIR/base/$proj" -name "base_*.tar.gz" 2>/dev/null | wc -l | xargs)
-    LATEST_LOCAL=$(ls -t "$DATA_DIR/base/$proj"/base_*.tar.gz 2>/dev/null | head -1)
-    if [ -n "$LATEST_LOCAL" ]; then
-      LATEST_SIZE=$(du -sh "$LATEST_LOCAL" | cut -f1)
-      LATEST_NAME=$(basename "$LATEST_LOCAL")
-      LATEST_DATE=$(echo "$LATEST_NAME" | sed 's/base_\([0-9]*\)_\([0-9]*\).*/\1 \2/' | sed 's/\([0-9]\{4\}\)\([0-9]\{2\}\)\([0-9]\{2\}\) \([0-9]\{2\}\)\([0-9]\{2\}\)\([0-9]\{2\}\)/\1-\2-\3 \4:\5:\6/')
-    else
-      LATEST_SIZE="-"
-      LATEST_DATE="无"
-    fi
-
-    # R2 备份
-    R2_COUNT=$(rclone lsf "${R2_REMOTE}:${R2_BUCKET}/${proj}/base/" 2>/dev/null | wc -l | xargs)
-
-    # WAL
-    WAL_LOCAL=$(find "$DATA_DIR/wal/$proj" -type f 2>/dev/null | wc -l | xargs)
-
-    echo -e "  ${CYAN}●${NC} ${BOLD}$proj${NC}"
-    echo -e "    容器: $CONTAINER ($C_STATUS)"
-    echo -e "    数据库: $DB_USER@$DB_NAME"
-    echo -e "    本地备份: ${LOCAL_COUNT} 个 | R2 备份: ${R2_COUNT} 个"
-    echo -e "    最新备份: ${LATEST_DATE} (${LATEST_SIZE})"
-    echo -e "    待同步 WAL: ${WAL_LOCAL} 个"
-    echo -e "    保留策略: ${DAYS_KEEP} 天 | 限速: ${BWLIMIT}"
-    echo ""
-  done
-}
-
-# ==================== 命令: remove ====================
-
-cmd_remove() {
-  local PROJECT=""
-
-  while [[ $# -gt 0 ]]; do
-    case $1 in
-      --project) PROJECT="$2"; shift 2;;
-      *) shift;;
-    esac
-  done
-
-  if [ -z "$PROJECT" ]; then
-    echo "用法: walrus remove --project <名称> [--purge]"
-    exit 1
-  fi
-
-  if [ ! -f "$CONF_DIR/${PROJECT}.conf" ]; then
-    log_err "项目 '$PROJECT' 不存在"
-    exit 1
-  fi
-
-  # 移除 cron
-  CRON_TAG="# walrus:$PROJECT"
-  crontab -l 2>/dev/null | grep -v "$CRON_TAG" | crontab - 2>/dev/null || true
-
-  # 移除本地数据
-  rm -rf "$DATA_DIR/base/$PROJECT"
-  rm -rf "$DATA_DIR/wal/$PROJECT"
-  rm -rf "$LOG_DIR/$PROJECT"
-  rm -f "$CONF_DIR/${PROJECT}.conf"
-
-  log_ok "项目 '$PROJECT' 已移除（R2 上的备份已保留）"
-}
-
-# ==================== 命令: logs ====================
-
-cmd_logs() {
-  local PROJECT=""
-
-  while [[ $# -gt 0 ]]; do
-    case $1 in
-      --project) PROJECT="$2"; shift 2;;
-      *) shift;;
-    esac
-  done
-
-  if [ -z "$PROJECT" ]; then
-    echo "用法: walrus logs --project <名称>"
-    exit 1
-  fi
-
-  LOGFILE="$LOG_DIR/$PROJECT/backup.log"
-  SYNCLOG="$LOG_DIR/$PROJECT/sync.log"
-
-  if [ -f "$LOGFILE" ]; then
-    echo -e "${BOLD}=== 备份日志 (最近 20 行) ===${NC}"
-    tail -20 "$LOGFILE"
-    echo ""
-  fi
-
-  if [ -f "$SYNCLOG" ]; then
-    echo -e "${BOLD}=== 同步日志 (最近 10 行) ===${NC}"
-    tail -10 "$SYNCLOG"
-  fi
-
-  if [ ! -f "$LOGFILE" ] && [ ! -f "$SYNCLOG" ]; then
-    log_warn "暂无日志"
-  fi
-}
-
-# ==================== 命令: help ====================
-
-cmd_help() {
-  banner
-  cat << 'HELP'
-  用法: walrus <命令> [参数]
-
-  命令:
-    init      注册新项目并配置自动备份
-    backup    立即执行全量备份
-    sync      立即同步 WAL 日志
-    restore   从 R2 恢复数据库
-    status    查看所有项目状态
-    logs      查看项目日志
-    remove    移除项目（保留 R2 备份）
-
-  示例:
-    walrus init --project myapp --container pg_myapp --user admin --db myapp_db \
-      --r2-access-key xxx --r2-secret-key xxx --r2-endpoint https://xxx.r2.cloudflarestorage.com
-
-    walrus backup  --project myapp
-    walrus sync    --project myapp
-    walrus status
-    walrus restore --project myapp --password secret123
-    walrus restore --project myapp --password secret123 --target-time "2026-04-22 14:30:00+08"
-    walrus logs    --project myapp
-    walrus remove  --project myapp
-
-HELP
-}
-
-# ==================== 主入口 ====================
-
-COMMAND="${1:-help}"
-shift || true
-
-case "$COMMAND" in
-  init)    cmd_init "$@";;
-  backup)  cmd_backup "$@";;
-  sync)    cmd_sync "$@";;
-  restore) cmd_restore "$@";;
-  status)  cmd_status "$@";;
-  logs)    cmd_logs "$@";;
-  remove)  cmd_remove "$@";;
-  help|-h|--help) cmd_help;;
-  version|-v|--version) echo "walrus v${VERSION}";;
-  *) log_err "未知命令: $COMMAND"; cmd_help; exit 1;;
-esac
+main "$@"
