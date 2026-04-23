@@ -141,6 +141,19 @@ cmd_init() {
 
   [[ "$MODE" == "docker" ]] && [[ -z "$CONTAINER" ]] && die "Container name cannot be empty"
 
+  # Check for duplicate project name
+  if [[ -f "${WALRUS_CONF_DIR}/${PROJECT}.conf" ]]; then
+    log_warn "Project '${PROJECT}' already exists"
+    if $interactive; then
+      if ! confirm "Overwrite existing config?"; then
+        echo "  Cancelled"
+        return
+      fi
+    else
+      die "Project '${PROJECT}' already exists, use a different name or remove it first"
+    fi
+  fi
+
   local mode_label
   case "$MODE" in
     docker) mode_label="Docker: ${CONTAINER} -> ${DB_HOST}:${DB_PORT}" ;;
