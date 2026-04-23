@@ -22,12 +22,6 @@
   <a href="https://github.com/LayFz/walrus/releases">Releases</a>
 </p>
 
-<p align="center">
-  <a href="https://star-history.com/#LayFz/walrus&Date">
-    <img src="https://api.star-history.com/svg?repos=LayFz/walrus&type=Date" alt="Star History" width="600" />
-  </a>
-</p>
-
 ---
 
 One command to back up all your PostgreSQL databases to Cloudflare R2. Designed for indie hackers — multi-project, multi-server, zero hassle.
@@ -275,6 +269,14 @@ systemctl daemon-reload
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup and release process.
+
+## Star History
+
+<p align="center">
+  <a href="https://star-history.com/#LayFz/walrus&Date">
+    <img src="https://api.star-history.com/svg?repos=LayFz/walrus&type=Date" alt="Star History" width="600" />
+  </a>
+</p>
 
 ## License
 

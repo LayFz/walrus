@@ -3,7 +3,7 @@
 # walrus - constants
 # Global constants and version info
 
-readonly WALRUS_VERSION="2.0.0"
+readonly WALRUS_VERSION="dev"
 
 # Platform
 readonly WALRUS_OS="$(uname -s | tr '[:upper:]' '[:lower:]')"  # linux / darwin
