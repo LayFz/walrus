@@ -5,36 +5,41 @@
 cmd_help() {
   banner
   cat <<HELP
-  ${C_BOLD}用法${C_RESET}
+  ${C_BOLD}Usage${C_RESET}
     walrus <command> [options]
 
-  ${C_BOLD}入门${C_RESET}
-    ${C_CYAN}config${C_RESET}    配置 R2 存储连接         ${C_DIM}walrus config${C_RESET}
-    ${C_CYAN}init${C_RESET}      注册项目 (交互式引导)    ${C_DIM}walrus init${C_RESET}
+  ${C_BOLD}Getting Started${C_RESET}
+    ${C_CYAN}config${C_RESET}    Configure remote storage (R2/S3/...)  ${C_DIM}walrus config${C_RESET}
+    ${C_CYAN}init${C_RESET}      Register a project (interactive)      ${C_DIM}walrus init${C_RESET}
 
-  ${C_BOLD}备份${C_RESET}
-    ${C_CYAN}backup${C_RESET}    执行全量备份             ${C_DIM}walrus backup${C_RESET}
-    ${C_CYAN}sync${C_RESET}      同步 WAL 日志            ${C_DIM}walrus sync${C_RESET}
+  ${C_BOLD}Deployment Modes${C_RESET}
+    ${C_DIM}walrus init supports two PostgreSQL deployment modes:${C_RESET}
+    ${C_CYAN}docker${C_RESET}    PostgreSQL running in a Docker container
+    ${C_CYAN}direct${C_RESET}    Connect via host:port (local or remote)
 
-  ${C_BOLD}恢复${C_RESET}
-    ${C_CYAN}restore${C_RESET}   从 R2 恢复数据库         ${C_DIM}walrus restore${C_RESET}
+  ${C_BOLD}Backup${C_RESET}
+    ${C_CYAN}backup${C_RESET}    Run a full backup                     ${C_DIM}walrus backup${C_RESET}
+    ${C_CYAN}sync${C_RESET}      Sync WAL logs                         ${C_DIM}walrus sync${C_RESET}
 
-  ${C_BOLD}管理${C_RESET}
-    ${C_CYAN}status${C_RESET}    查看项目状态             ${C_DIM}walrus status${C_RESET}
-    ${C_CYAN}list${C_RESET}      查看 R2 备份详情         ${C_DIM}walrus list${C_RESET}
-    ${C_CYAN}logs${C_RESET}      查看日志                 ${C_DIM}walrus logs [-f]${C_RESET}
-    ${C_CYAN}service${C_RESET}   管理系统服务             ${C_DIM}walrus service status${C_RESET}
-    ${C_CYAN}remove${C_RESET}    移除项目                 ${C_DIM}walrus remove --project x${C_RESET}
+  ${C_BOLD}Restore${C_RESET}
+    ${C_CYAN}restore${C_RESET}   Restore database from R2              ${C_DIM}walrus restore${C_RESET}
 
-  ${C_BOLD}快速开始${C_RESET}
-    1. walrus config              ${C_DIM}# 配置 R2${C_RESET}
-    2. walrus init                ${C_DIM}# 注册项目${C_RESET}
-    3. walrus status              ${C_DIM}# 确认一切正常${C_RESET}
+  ${C_BOLD}Management${C_RESET}
+    ${C_CYAN}status${C_RESET}    Show project status                   ${C_DIM}walrus status${C_RESET}
+    ${C_CYAN}list${C_RESET}      Show R2 backup details                ${C_DIM}walrus list${C_RESET}
+    ${C_CYAN}logs${C_RESET}      View logs                             ${C_DIM}walrus logs [-f]${C_RESET}
+    ${C_CYAN}service${C_RESET}   Manage system services                ${C_DIM}walrus service status${C_RESET}
+    ${C_CYAN}remove${C_RESET}    Remove a project                      ${C_DIM}walrus remove --project x${C_RESET}
 
-  ${C_BOLD}提示${C_RESET}
-    • 只有一个项目时 --project 可省略
-    • 命令缩写: st=status, ls=list, rm=remove
-    • 每个命令支持 -h 查看帮助
+  ${C_BOLD}Quick Start${C_RESET}
+    1. walrus config              ${C_DIM}# Configure R2${C_RESET}
+    2. walrus init                ${C_DIM}# Register project (choose mode)${C_RESET}
+    3. walrus status              ${C_DIM}# Verify everything is working${C_RESET}
+
+  ${C_BOLD}Tips${C_RESET}
+    * --project can be omitted when only one project is registered
+    * Aliases: st=status, ls=list, rm=remove
+    * Each command supports -h for help
 
 HELP
 }

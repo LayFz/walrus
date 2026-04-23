@@ -1,163 +1,246 @@
-# 🦭 walrus
+<p align="center">
+  <img src="docs/images/logo.png" alt="walrus" width="200" />
+</p>
 
-> PostgreSQL backup buddy for indie hackers
+<h1 align="center">walrus</h1>
 
-一条命令备份你所有服务器上的 PostgreSQL 到 Cloudflare R2。为独立开发者设计——多项目、多服务器、零负担。
+<p align="center">
+  <strong>PostgreSQL backup buddy for indie hackers</strong>
+</p>
+
+<p align="center">
+  <a href="https://github.com/LayFz/walrus/releases"><img src="https://img.shields.io/github/v/release/LayFz/walrus?style=flat-square&color=blue" alt="Release" /></a>
+  <a href="https://github.com/LayFz/walrus/blob/main/LICENSE"><img src="https://img.shields.io/github/license/LayFz/walrus?style=flat-square" alt="License" /></a>
+  <a href="https://github.com/LayFz/walrus/stargazers"><img src="https://img.shields.io/github/stars/LayFz/walrus?style=flat-square" alt="Stars" /></a>
+  <a href="https://github.com/LayFz/walrus/issues"><img src="https://img.shields.io/github/issues/LayFz/walrus?style=flat-square" alt="Issues" /></a>
+</p>
+
+<p align="center">
+  <a href="./docs/README_CN.md">简体中文</a> |
+  <a href="#quick-start">Quick Start</a> |
+  <a href="#how-it-works">How It Works</a> |
+  <a href="https://github.com/LayFz/walrus/releases">Releases</a>
+</p>
+
+<p align="center">
+  <a href="https://star-history.com/#LayFz/walrus&Date">
+    <img src="https://api.star-history.com/svg?repos=LayFz/walrus&type=Date" alt="Star History" width="600" />
+  </a>
+</p>
+
+---
+
+One command to back up all your PostgreSQL databases to Cloudflare R2. Designed for indie hackers — multi-project, multi-server, zero hassle.
 
 ## Features
 
-- **交互式引导** — 像 rclone 一样，问答式配置，不用记参数
-- **物理备份** — `pg_basebackup`，不走查询引擎，对业务零影响
-- **WAL 增量同步** — 每 5 分钟同步，只传新数据，最多丢 5 分钟
-- **带宽限速** — 默认 2MB/s，全球业务不受影响
-- **多项目管理** — 不同服务器的不同项目，全部归类到一个 R2 bucket
-- **自动清理** — 默认保留 7 天，本地和 R2 同步清理
-- **一键恢复** — 交互式选择备份点，支持 point-in-time recovery
-- **systemd 服务** — 注册为系统服务，开机自启，像装 MySQL 一样
-- **并发安全** — 锁文件防止重复备份
-- **信号处理** — Ctrl+C 安全退出，临时文件自动清理
+- **Two deployment modes** — Docker container or direct connection (local/remote), unified management
+- **Interactive setup** — Step-by-step guided configuration, no need to memorize flags
+- **Physical backups** — Uses `pg_basebackup`, bypasses the query engine, zero impact on your app
+- **WAL incremental sync** — Every 5 minutes, only transfers new data, max 5 min data loss
+- **Bandwidth limiting** — Default 2MB/s upload, won't affect your production traffic
+- **Multi-project** — Different databases on different servers, all organized in one R2 bucket
+- **Auto-cleanup** — Default 7-day retention, synced cleanup on local and R2
+- **One-click restore** — Interactive backup selection with point-in-time recovery (PITR)
+- **systemd integration** — Runs as a system service, starts on boot
+- **Concurrency safe** — Lock files prevent duplicate backup operations
 
 ## Quick Start
 
 ### Install
 
 ```bash
+# Install latest version
 curl -sSL https://raw.githubusercontent.com/LayFz/walrus/main/install.sh | sudo bash
+
+# Install specific version
+curl -sSL https://raw.githubusercontent.com/LayFz/walrus/main/install.sh | WALRUS_VERSION=2.0.0 sudo -E bash
 ```
+
+The installer automatically sets up `postgresql-client` if not already present.
 
 ### Setup
 
 ```bash
-# 1. 配置 R2 存储（交互式）
+# 1. Configure R2 storage (interactive)
 walrus config
 
-# 2. 注册项目（交互式引导，自动检测 PG 容器）
+# 2. Register a project (interactive)
 walrus init
 
-# 3. 确认一切正常
+# 3. Verify everything is working
 walrus status
 ```
 
-就这样。walrus 会自动检测你的 PostgreSQL 容器、配置 WAL 归档、注册 systemd 服务、跑一次完整测试。
+`walrus init` guides you through selecting your PostgreSQL deployment mode, configures WAL archiving, registers systemd services, and runs a full end-to-end test.
 
-### One-liner (CI/脚本场景)
+## Deployment Modes
+
+### Docker Container
+
+PostgreSQL is running in Docker. walrus connects via the mapped port.
 
 ```bash
-walrus init \
+walrus init --mode docker \
   --project myapp \
   --container postgres \
-  --user myuser \
-  --db mydb \
-  --r2-access-key <KEY> \
-  --r2-secret-key <SECRET> \
-  --r2-endpoint https://xxxx.r2.cloudflarestorage.com
+  --host localhost --port 5432 \
+  --user myuser --db mydb
 ```
+
+### Direct Connection
+
+PostgreSQL is accessible via host:port — whether it's on localhost, a remote server, or a managed service like RDS.
+
+```bash
+walrus init --mode direct \
+  --project myapp \
+  --host 10.0.1.5 --port 5432 \
+  --user myuser --db mydb
+```
+
+> In interactive mode you don't need to remember any flags — `walrus init` will walk you through it.
 
 ## Commands
 
-```
-walrus config     配置 R2 存储连接
-walrus init       注册项目并配置自动备份
-walrus backup     立即执行全量备份
-walrus sync       立即同步 WAL 日志
-walrus restore    从 R2 恢复数据库
-walrus status     查看所有项目状态
-walrus list       查看 R2 上的备份详情
-walrus logs       查看日志 (支持 -f 实时跟踪)
-walrus service    管��系统服��� (start|stop|status|enable|disable)
-walrus remove     移除项目
-walrus help       帮助
-```
+| Command | Description |
+|---------|-------------|
+| `walrus config` | Configure remote storage (R2/S3/MinIO) |
+| `walrus init` | Register a project with interactive setup |
+| `walrus backup` | Run a full physical backup |
+| `walrus sync` | Sync WAL logs to R2 |
+| `walrus restore` | Restore database from R2 |
+| `walrus status` | Show all project statuses |
+| `walrus list` | Show R2 backup details |
+| `walrus logs` | View logs (`-f` for live tail) |
+| `walrus service` | Manage systemd services |
+| `walrus remove` | Remove a project |
+| `walrus help` | Show help |
 
-> 只注册了一个项目时，`--project` 可以省略。命令缩写：`st`=status, `ls`=list, `rm`=remove, `svc`=service
+> When only one project is registered, `--project` can be omitted. Aliases: `st`=status, `ls`=list, `rm`=remove, `svc`=service.
 
 ## Service Management
 
-walrus 会为每个项目注册两个 systemd timer，像装 MySQL 一样作为系统服务运行：
+walrus registers two systemd timers per project, running as a system service:
 
 ```bash
-# 查看服务状态
+# Check service status
 walrus service status
 
-# 输出示例:
-#   masous
-#     WAL 同步:  ● 活跃 → 下次: 2 min left
-#     全量备份:  ● 活跃 → 下次: Thu 2026-04-23 03:00:00 CST
+# Example output:
+#   myapp
+#     WAL sync:    ● Active -> Next: 2 min left
+#     Full backup: ● Active -> Next: Thu 2026-04-24 03:00:00 CST
 
-# 停止/启动
+# Stop/Start
 walrus service stop
 walrus service start
 
-# 禁用开机自启
+# Disable auto-start on boot
 walrus service disable
 ```
 
-每个���目对应两个 systemd 单元：
-
-| Unit | 说明 | 频率 |
-|------|------|------|
-| `walrus-sync@<project>.timer` | WAL 增量同步 | 每 5 分钟 |
-| `walrus-backup@<project>.timer` | 全量物理备份 + 清理 | 每天 03:00 |
-
-同时保留 cron 作为后备（无 systemd 的环境自动降级）。
-
-## Multi-server Usage
-
-walrus 为多服务器场景设计。在每台服务器上安装后注册各自的项目：
-
-```
-Server A (电商)          Server B (博客)          Server C (SaaS)
-┌──────────────────┐    ┌──────────────────┐    ┌──────────────────┐
-│ walrus init       │    │ walrus init       │    │ walrus init       │
-│  --project shop   │    │  --project blog   │    │  --project saas   │
-└────────┬─────────┘    └────────┬─────────┘    └────────┬─────────┘
-         │                       │                       │
-         └───────────────────────┼───────────────────────┘
-                                 │
-                    ┌────────────▼────────────┐
-                    │    Cloudflare R2         │
-                    │                         │
-                    │  backup/                │
-                    │  ├── shop/              │
-                    │  │   ├── base/          │
-                    │  │   └── wal/           │
-                    │  ├── blog/              │
-                    │  │   ├── base/          │
-                    │  │   └── wal/           │
-                    │  └── saas/              │
-                    │      ├── base/          │
-                    │      └── wal/           │
-                    └─────────────────────────┘
-```
+| Unit | Description | Frequency |
+|------|-------------|-----------|
+| `walrus-sync@<project>.timer` | WAL incremental sync | Every 5 min |
+| `walrus-backup@<project>.timer` | Full physical backup + cleanup | Daily 03:00 |
 
 ## Restore
 
 ```bash
-# 交互式恢复（选择备份、输入密码）
+# Interactive restore (select backup, enter password)
 walrus restore
 
-# 恢复到指定时间点
+# Restore to a specific point in time
 walrus restore --project myapp --password secret \
-  --target-time "2026-04-22 14:30:00+08"
+  --target-time "2026-04-23 14:30:00+08"
 ```
 
-恢复后的数据库运行在端口 15432，验证无误后切换即可。
+All restores spin up a local Docker container (port 15432) for verification. Once confirmed, you can migrate the data to production.
+
+## How It Works
+
+```
+Daily 03:00                              Every 5 min
+┌──────────────────┐                     ┌─────────────────┐
+│  pg_basebackup   │                     │  WAL archiving   │
+│  (full physical) │                     │  (incremental)   │
+└────────┬─────────┘                     └────────┬────────┘
+         │                                        │
+         │  --max-rate=30M                        │  new files only
+         │  --checkpoint=spread                   │  --checksum
+         ▼                                        ▼
+┌──────────────────────────────────────────────────────┐
+│               rclone (--bwlimit 2M)                  │
+└─────────────────────────┬────────────────────────────┘
+                          │
+                          ▼
+                 ┌─────────────────┐
+                 │  Cloudflare R2  │
+                 │  (S3 / MinIO)   │
+                 └─────────────────┘
+```
+
+### Multi-Project Architecture
+
+```
+Your Server (walrus)
+├── walrus init --mode docker --project shop     # Docker PostgreSQL
+├── walrus init --mode direct --project blog     # Local PostgreSQL
+├── walrus init --mode direct --project saas     # Remote PostgreSQL
+│
+└── All backups -> Cloudflare R2
+                     backup/
+                     ├── shop/
+                     │   ├── base/
+                     │   └── wal/
+                     ├── blog/
+                     │   ├── base/
+                     │   └── wal/
+                     └── saas/
+                         ├── base/
+                         └── wal/
+```
+
+## Performance Impact
+
+walrus is designed to be production-safe:
+
+| Measure | Details |
+|---------|---------|
+| `--checkpoint=spread` | Spreads checkpoint I/O over time, avoids spikes |
+| `--max-rate=30M` | Limits disk read rate, won't saturate your I/O |
+| `--bwlimit 2M` | Upload rate limiting, negligible network impact |
+| WAL archive (`cp`) | Simple file copy, minimal overhead |
+
+These defaults are safe for databases under heavy read/write load. Adjustable in `lib/constants.sh`.
+
+## Requirements
+
+- Linux or macOS
+- Bash 4+
+- PostgreSQL 12+ (client tools installed automatically)
+- Cloudflare R2 / Amazon S3 / any S3-compatible storage
+- **Docker mode**: Docker installed + PostgreSQL container
+- **Restore**: Docker required (all modes)
+- Root access recommended for systemd integration
 
 ## Project Structure
 
 ```
 walrus/
-├── walrus                  # 入口：加载模块 + 命令分发
-├── install.sh              # 远程一键安装
+├── walrus                  # Entry point: module loader + command dispatch
+├── install.sh              # Remote one-line installer
 ├── lib/
-│   ├── constants.sh        # 常量 & 版本
-│   ├── colors.sh           # 终端颜色（自动检测）
-│   ├── logger.sh           # 日志系统
-│   ├── cleanup.sh          # 信号处理 & 临时文件清理
-│   ├── utils.sh            # 交互提示 & 通用工具
-│   ├── lock.sh             # 并发锁
-│   ├── project.sh          # 项目配置管理
-│   └── r2.sh               # rclone/R2 操作封装
+│   ├── constants.sh        # Constants & version
+│   ├── colors.sh           # Terminal colors (auto-detect)
+│   ├── logger.sh           # Logging system
+│   ├── cleanup.sh          # Signal handling & temp file cleanup
+│   ├── utils.sh            # Interactive prompts & utilities
+│   ├── lock.sh             # Concurrency lock
+│   ├── project.sh          # Project config management
+│   ├── r2.sh               # rclone/R2 operations
+│   └── pg.sh               # PostgreSQL abstraction (docker/direct)
 ├── commands/
 │   ├── config.sh           # walrus config
 │   ├── init.sh             # walrus init
@@ -167,75 +250,18 @@ walrus/
 │   ├── status.sh           # walrus status
 │   ├── list.sh             # walrus list
 │   ├── logs.sh             # walrus logs
-│   ├── service.sh          # walrus service + systemd 管理
+│   ├── service.sh          # walrus service + systemd
 │   ├── remove.sh           # walrus remove
 │   └── help.sh             # walrus help
 ├── README.md
+├── CONTRIBUTING.md
 └── LICENSE
 ```
-
-安装后的服务器目录：
-
-```
-/opt/walrus/
-├── walrus                  # 主程序
-├── lib/                    # 库文件
-├── commands/               # 命令文件
-├── conf/
-│   ├── .default_bucket     # 默认 bucket
-│   ├── myapp.conf          # 项目配置
-│   └── blog.conf
-├── data/
-│   ├── base/<project>/     # 本地 base backup
-│   └── wal/<project>/      # 本地 WAL 缓存
-├── logs/<project>/         # 日志
-└── locks/<project>/        # 运行锁
-```
-
-## How It Works
-
-```
-每天 03:00                            每 5 分钟
-┌─��───────────┐                     ┌───────────┐
-│ pg_basebackup│                     │ WAL 归档   │
-│ (物理全量)   │                     │ (增量同步) │
-└──────┬──────┘                     └─────┬─────┘
-       │                                  │
-       │  --max-rate=30M                  │  只传新文件
-       │  --checkpoint=spread             │  --checksum
-       ▼                                  ▼
-┌─────���────────────────────────────────────────┐
-│              rclone (--bwlimit 2M)           │
-└──────────────────────┬───────────────────────┘
-                       │
-                       ▼
-              ┌─────────────────┐
-              │  Cloudflare R2  │
-              └─────────────────┘
-```
-
-## Performance
-
-| Operation | DB Impact | Bandwidth |
-|-----------|-----------|-----------|
-| WAL archiving (container internal cp) | None | None |
-| WAL upload (rclone) | None | ≤ 2MB/s |
-| pg_basebackup | Disk read, rate-limited 30MB/s | None |
-| Base backup upload | None | ≤ 2MB/s |
-
-## Requirements
-
-- Linux (Ubuntu/Debian/CentOS)
-- Docker
-- PostgreSQL 12+ in Docker
-- Bash 4+
-- Root access
-- Cloudflare R2 account
 
 ## Uninstall
 
 ```bash
-# Stop services
+# Stop and disable services
 walrus service disable
 
 # Remove everything
@@ -246,6 +272,10 @@ rm -f /etc/systemd/system/walrus-*
 systemctl daemon-reload
 ```
 
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup and release process.
+
 ## License
 
-MIT
+[MIT](LICENSE)

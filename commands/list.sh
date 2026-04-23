@@ -8,7 +8,7 @@ cmd_list() {
   while [[ $# -gt 0 ]]; do
     case $1 in
       --project) project_arg="$2"; shift 2;;
-      -h|--help) echo "用法: walrus list [--project <名称>]"; return;;
+      -h|--help) echo "Usage: walrus list [--project <name>]"; return;;
       *) shift;;
     esac
   done
@@ -17,14 +17,14 @@ cmd_list() {
 
   local r2_path="${R2_REMOTE}:${R2_BUCKET}/${PROJECT}"
 
-  printf "\n ${C_BOLD}R2 备份: %s${C_RESET}\n\n" "$PROJECT"
+  printf "\n ${C_BOLD}R2 Backups: %s${C_RESET}\n\n" "$PROJECT"
 
   # Base backups
   printf " ${C_CYAN}Base Backups${C_RESET}\n"
   local bases
   bases=$(rclone lsf "${r2_path}/base/" --format "sp" 2>/dev/null | sort || true)
   if [[ -z "$bases" ]]; then
-    log_dim "  (空)"
+    log_dim "  (empty)"
   else
     while read -r line; do
       local size name
@@ -43,5 +43,5 @@ cmd_list() {
   # WAL count
   local wal_count
   wal_count=$(rclone lsf "${r2_path}/wal/" 2>/dev/null | wc -l | xargs)
-  printf " ${C_CYAN}WAL Segments${C_RESET}  %s 个\n\n" "$wal_count"
+  printf " ${C_CYAN}WAL Segments${C_RESET}  %s\n\n" "$wal_count"
 }

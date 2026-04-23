@@ -1,18 +1,25 @@
 #!/usr/bin/env bash
 #
 # walrus init - register a project and configure automatic backups
+# Supports two modes: docker / direct
 
 cmd_init() {
-  local PROJECT="" CONTAINER="" DB_USER="" DB_NAME=""
+  local PROJECT="" MODE="" CONTAINER="" DB_USER="" DB_NAME="" DB_PASS=""
+  local DB_HOST="localhost" DB_PORT="5432"
   local BWLIMIT="" DAYS_KEEP="" R2_BUCKET=""
   local _r2_ak="" _r2_sk="" _r2_ep=""
-  local interactive=true
+  local interactive=true from_config=false
 
   while [[ $# -gt 0 ]]; do
     case $1 in
+      --from-config)   from_config=true; shift;;
       --project)       PROJECT="$2"; interactive=false; shift 2;;
+      --mode)          MODE="$2"; shift 2;;
       --container)     CONTAINER="$2"; shift 2;;
+      --host)          DB_HOST="$2"; shift 2;;
+      --port)          DB_PORT="$2"; shift 2;;
       --user)          DB_USER="$2"; shift 2;;
+      --password)      DB_PASS="$2"; shift 2;;
       --db)            DB_NAME="$2"; shift 2;;
       --r2-access-key) _r2_ak="$2"; shift 2;;
       --r2-secret-key) _r2_sk="$2"; shift 2;;
@@ -21,106 +28,144 @@ cmd_init() {
       --keep)          DAYS_KEEP="$2"; shift 2;;
       --bucket)        R2_BUCKET="$2"; shift 2;;
       -h|--help)       _init_usage; return;;
-      *) die "未知参数: $1";;
+      *) die "Unknown option: $1";;
     esac
   done
 
-  banner
-  require_root "init"
+  if ! $from_config; then
+    banner
+  fi
 
   # ── R2 setup ──
 
   if [[ -n "$_r2_ak" ]] && [[ -n "$_r2_sk" ]] && [[ -n "$_r2_ep" ]]; then
-    log_run "配置 R2..."
+    log_run "Configuring R2..."
     ensure_rclone
-    r2_configure "$_r2_ak" "$_r2_sk" "$_r2_ep"
-    log_ok "R2 配置完成"
+    _write_remote \
+      "provider=Cloudflare" \
+      "access_key_id=${_r2_ak}" \
+      "secret_access_key=${_r2_sk}" \
+      "endpoint=${_r2_ep}" \
+      "acl=private" \
+      "no_check_bucket=true"
+    log_ok "R2 configured"
   fi
 
-  if ! r2_is_configured; then
-    echo ""
-    log_warn "R2 尚未配置"
-    echo ""
-    if $interactive && confirm "现在配置 R2?"; then
-      cmd_config
-    else
-      die "请先运行 'walrus config' 配置 R2 存储"
+  if ! $from_config; then
+    if ! r2_is_configured; then
+      echo ""
+      log_warn "Remote storage not configured"
+      echo ""
+      if $interactive && confirm "Configure now?"; then
+        cmd_config
+        return
+      else
+        die "Please run 'walrus config' to set up remote storage first"
+      fi
     fi
+    r2_check_connection || die "Remote storage connection failed, run 'walrus config' to reconfigure"
   fi
 
-  r2_check_connection || die "R2 连接失败，运行 'walrus config' 重新配置"
+  # ── Mode selection ──
+
+  if $interactive && [[ -z "$MODE" ]]; then
+    printf " ${C_BOLD}Select PostgreSQL deployment mode${C_RESET}\n\n"
+    printf "   ${C_CYAN}1)${C_RESET} Docker container  ${C_DIM}PostgreSQL running in Docker${C_RESET}\n"
+    printf "   ${C_CYAN}2)${C_RESET} Direct connection  ${C_DIM}Connect via host:port (local or remote)${C_RESET}\n"
+    echo ""
+    ask "Choose (1/2)" "1"
+    case "$REPLY" in
+      1) MODE="docker" ;;
+      2) MODE="direct" ;;
+      *) die "Invalid choice" ;;
+    esac
+    echo ""
+  fi
+
+  MODE="${MODE:-docker}"
 
   # ── Interactive prompts ──
 
   if $interactive || [[ -z "$PROJECT" ]]; then
-    printf " ${C_BOLD}注册新项目${C_RESET}\n\n"
+    printf " ${C_BOLD}Register new project${C_RESET}\n\n"
 
-    # Show running PG containers
-    local pg_containers
-    pg_containers=$(docker ps --format '{{.Names}}\t{{.Image}}' 2>/dev/null | grep -i "postgres" || true)
-    if [[ -n "$pg_containers" ]]; then
-      printf " ${C_DIM}检测到 PostgreSQL 容器:${C_RESET}\n"
-      while IFS=$'\t' read -r name image; do
-        printf "   ${C_CYAN}•${C_RESET} %s ${C_DIM}(%s)${C_RESET}\n" "$name" "$image"
-      done <<< "$pg_containers"
-      echo ""
-    fi
+    case "$MODE" in
+      docker)
+        local pg_containers
+        pg_containers=$(docker ps --format '{{.Names}}\t{{.Image}}' 2>/dev/null | grep -i "postgres" || true)
+        if [[ -n "$pg_containers" ]]; then
+          printf " ${C_DIM}Detected PostgreSQL containers:${C_RESET}\n"
+          while IFS=$'\t' read -r name image; do
+            printf "   ${C_CYAN}•${C_RESET} %s ${C_DIM}(%s)${C_RESET}\n" "$name" "$image"
+          done <<< "$pg_containers"
+          echo ""
+        fi
+        [[ -n "$PROJECT" ]]   || { ask "Project name (e.g. myapp)" ""; PROJECT="$REPLY"; }
+        [[ -n "$CONTAINER" ]] || { ask "PostgreSQL container name" ""; CONTAINER="$REPLY"; }
+        ask "Database host" "$DB_HOST"; DB_HOST="$REPLY"
+        ask "Mapped port" "$DB_PORT"; DB_PORT="$REPLY"
+        [[ -n "$DB_USER" ]]   || { ask "Database user" "postgres"; DB_USER="$REPLY"; }
+        [[ -n "$DB_PASS" ]]   || { ask "Database password" ""; DB_PASS="$REPLY"; }
+        [[ -n "$DB_NAME" ]]   || { ask "Database name" "$PROJECT"; DB_NAME="$REPLY"; }
+        ;;
+      direct)
+        [[ -n "$PROJECT" ]] || { ask "Project name (e.g. myapp)" ""; PROJECT="$REPLY"; }
+        ask "Database host" "$DB_HOST"; DB_HOST="$REPLY"
+        ask "Port" "$DB_PORT"; DB_PORT="$REPLY"
+        [[ -n "$DB_USER" ]] || { ask "Username" "postgres"; DB_USER="$REPLY"; }
+        [[ -n "$DB_PASS" ]] || { ask "Password" ""; DB_PASS="$REPLY"; }
+        [[ -n "$DB_NAME" ]] || { ask "Database name" "$PROJECT"; DB_NAME="$REPLY"; }
+        ;;
+    esac
 
-    [[ -n "$PROJECT" ]]   || { ask "项目名称 (如 myapp)" ""; PROJECT="$REPLY"; }
-    [[ -n "$CONTAINER" ]] || { ask "PostgreSQL 容器名" ""; CONTAINER="$REPLY"; }
-    [[ -n "$DB_USER" ]]   || { ask "数据库用户名" ""; DB_USER="$REPLY"; }
-    [[ -n "$DB_NAME" ]]   || { ask "数据库名" "$PROJECT"; DB_NAME="$REPLY"; }
-    [[ -n "$BWLIMIT" ]]   || { ask "上传限速" "${WALRUS_DEFAULT_BWLIMIT}"; BWLIMIT="$REPLY"; }
-    [[ -n "$DAYS_KEEP" ]] || { ask "备份保留天数" "${WALRUS_DEFAULT_KEEP_DAYS}"; DAYS_KEEP="$REPLY"; }
+    echo ""
+    [[ -n "$BWLIMIT" ]]   || { ask "Upload rate limit" "${WALRUS_DEFAULT_BWLIMIT}"; BWLIMIT="$REPLY"; }
+    [[ -n "$DAYS_KEEP" ]] || { ask "Retention days" "${WALRUS_DEFAULT_KEEP_DAYS}"; DAYS_KEEP="$REPLY"; }
 
     if [[ -z "$R2_BUCKET" ]]; then
-      ask "R2 Bucket" "$(r2_default_bucket)"
+      ask "Bucket" "$(r2_default_bucket)"
       R2_BUCKET="$REPLY"
     fi
     echo ""
   fi
 
-  # Defaults
   BWLIMIT="${BWLIMIT:-${WALRUS_DEFAULT_BWLIMIT}}"
   DAYS_KEEP="${DAYS_KEEP:-${WALRUS_DEFAULT_KEEP_DAYS}}"
   R2_BUCKET="${R2_BUCKET:-$(r2_default_bucket)}"
 
-  # Validate
-  [[ -n "$PROJECT" ]]   || die "项目名称不能为空"
-  [[ -n "$CONTAINER" ]] || die "容器名不能为空"
-  [[ -n "$DB_USER" ]]   || die "用户名不能为空"
-  [[ -n "$DB_NAME" ]]   || die "数据库名不能为空"
+  [[ -n "$PROJECT" ]]  || die "Project name cannot be empty"
+  [[ -n "$DB_HOST" ]]  || die "Database host cannot be empty"
+  [[ -n "$DB_USER" ]]  || die "Username cannot be empty"
+  [[ -n "$DB_NAME" ]]  || die "Database name cannot be empty"
   validate_project_name "$PROJECT"
 
-  printf " ${C_BOLD}初始化: %s${C_RESET}\n\n" "$PROJECT"
-  log_dim "容器: $CONTAINER | 数据库: $DB_USER@$DB_NAME"
-  log_dim "限速: $BWLIMIT | 保留: ${DAYS_KEEP}天 | Bucket: $R2_BUCKET"
+  [[ "$MODE" == "docker" ]] && [[ -z "$CONTAINER" ]] && die "Container name cannot be empty"
+
+  local mode_label
+  case "$MODE" in
+    docker) mode_label="Docker: ${CONTAINER} -> ${DB_HOST}:${DB_PORT}" ;;
+    direct) mode_label="${DB_HOST}:${DB_PORT}" ;;
+  esac
+
+  printf " ${C_BOLD}Initializing: %s${C_RESET}\n\n" "$PROJECT"
+  log_dim "Mode: $mode_label"
+  log_dim "Database: $DB_USER@$DB_NAME | Rate limit: $BWLIMIT | Retention: ${DAYS_KEEP} days"
   echo ""
 
   # ── Environment checks ──
 
-  log_run "检测环境..."
+  log_run "Checking environment..."
+  pg_check_environment
 
-  require_cmd docker
-
-  if ! docker ps --format '{{.Names}}' | grep -q "^${CONTAINER}$"; then
-    log_err "容器 '${CONTAINER}' 未运行"
-    echo ""
-    printf " ${C_DIM}当前运行的容器:${C_RESET}\n"
-    docker ps --format "   • {{.Names}} ({{.Image}})"
-    exit 1
-  fi
-  log_ok "容器 '${CONTAINER}'"
-
-  if ! docker exec "$CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" -c "SELECT 1;" &>/dev/null; then
-    die "数据库连接失败 — 请检查用户名和数据库名"
+  if ! pg_test_connection; then
+    die "Database connection failed — please check your credentials"
   fi
   local pg_ver
-  pg_ver=$(docker exec "$CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" -t -c "SHOW server_version;" | xargs)
+  pg_ver=$(pg_get_version)
   log_ok "PostgreSQL ${pg_ver}"
 
   r2_ensure_bucket "$R2_BUCKET"
-  log_ok "R2 Bucket '${R2_BUCKET}'"
+  log_ok "Bucket '${R2_BUCKET}'"
   echo ""
 
   # ── Directories ──
@@ -132,119 +177,131 @@ cmd_init() {
 
   # ── Save config ──
 
-  save_project_conf "$PROJECT" "$CONTAINER" "$DB_USER" "$DB_NAME" \
+  save_project_conf "$PROJECT" "$MODE" "$DB_USER" "$DB_NAME" \
     "$BWLIMIT" "$DAYS_KEEP" "$R2_BUCKET"
 
   # ── WAL archiving ──
 
-  log_run "配置 WAL 归档..."
+  log_run "Configuring WAL archiving..."
+
+  local wal_archive_dir
+  case "$MODE" in
+    docker) wal_archive_dir="${WALRUS_CONTAINER_WAL_DIR}" ;;
+    direct) wal_archive_dir="${WALRUS_DATA_DIR}/wal_archive/${PROJECT}" ;;
+  esac
 
   local need_restart=false
-  local archive_mode
-  archive_mode=$(docker exec "$CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" -t -c "SHOW archive_mode;" | xargs)
-
-  if [[ "$archive_mode" == "on" ]]; then
-    log_ok "WAL 归档已开启"
-  else
-    docker exec "$CONTAINER" mkdir -p "${WALRUS_CONTAINER_WAL_DIR}"
-    docker exec "$CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" \
-      -c "ALTER SYSTEM SET wal_level = 'replica';" >/dev/null
-    docker exec "$CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" \
-      -c "ALTER SYSTEM SET archive_mode = 'on';" >/dev/null
-    docker exec "$CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" \
-      -c "ALTER SYSTEM SET archive_command = 'cp %p ${WALRUS_CONTAINER_WAL_DIR}/%f';" >/dev/null
+  if pg_configure_wal_archive "$wal_archive_dir"; then
     need_restart=true
-    log_ok "WAL 归档已配置"
   fi
 
   # ── Systemd service ──
 
   _install_service "$PROJECT"
 
-  # ── Install self ──
-
-  local self_path
-  self_path="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")/.." && pwd)/walrus"
-  if [[ -f "$self_path" ]] && [[ "$self_path" != "/usr/local/bin/walrus" ]]; then
-    cp "$self_path" /usr/local/bin/walrus
-    chmod +x /usr/local/bin/walrus
-  fi
-
-  # ── Restart container ──
+  # ── Restart if needed ──
 
   if $need_restart; then
     echo ""
     if $interactive; then
-      if confirm "需要重启容器 '${CONTAINER}' 以启用 WAL 归档，现在重启?"; then
-        _restart_and_verify "$CONTAINER" "$DB_USER" "$DB_NAME"
+      local restart_msg
+      case "$MODE" in
+        docker) restart_msg="Need to restart container '${CONTAINER}' to enable WAL archiving. Restart now?" ;;
+        direct) restart_msg="Need to restart PostgreSQL to enable WAL archiving. Restart now?" ;;
+      esac
+      if confirm "$restart_msg"; then
+        _restart_and_verify
       else
-        log_warn "请稍后手动重启: docker restart ${CONTAINER}"
+        case "$MODE" in
+          docker) log_warn "Please restart manually: docker restart ${CONTAINER}" ;;
+          *)      log_warn "Please restart PostgreSQL manually" ;;
+        esac
       fi
     else
-      _restart_and_verify "$CONTAINER" "$DB_USER" "$DB_NAME"
+      _restart_and_verify
     fi
     echo ""
   fi
 
   # ── Test ──
 
-  log_run "测试备份..."
+  log_run "Testing backup..."
   echo ""
 
-  docker exec "$CONTAINER" mkdir -p "${WALRUS_CONTAINER_WAL_DIR}" 2>/dev/null || true
-  docker exec "$CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" \
-    -c "SELECT pg_switch_wal();" &>/dev/null || true
+  pg_switch_wal
   sleep 2
 
-  cmd_sync --project "$PROJECT" 2>/dev/null
-  log_ok "WAL 同步"
+  if cmd_sync --project "$PROJECT"; then
+    log_ok "WAL sync"
+  else
+    log_warn "WAL sync failed (can retry later)"
+  fi
 
-  cmd_backup --project "$PROJECT" 2>/dev/null
-  log_ok "全量备份 + R2 上传"
+  if cmd_backup --project "$PROJECT"; then
+    log_ok "Full backup + upload"
+  else
+    echo ""
+    log_err "Backup test failed"
+    log_dim "Please check the errors above. Common causes:"
+    log_dim "  1. pg_hba.conf does not allow replication connections"
+    log_dim "  2. User lacks REPLICATION privilege"
+    log_dim "  3. max_wal_senders is set to 0"
+    echo ""
+    log_dim "After fixing, run: walrus backup --project ${PROJECT}"
+    echo ""
+    return
+  fi
 
   local r2_count
   r2_count=$(rclone lsf "${WALRUS_R2_REMOTE}:${R2_BUCKET}/${PROJECT}/base/" 2>/dev/null | wc -l | xargs)
   if [[ "$r2_count" -gt 0 ]]; then
-    log_ok "R2 验证通过 (${r2_count} 个备份)"
+    log_ok "Remote verification passed (${r2_count} backup(s))"
   else
-    die "R2 上传验证失败"
+    log_warn "Remote upload verification failed, please check R2 connection"
   fi
 
   echo ""
-  printf " ${C_GREEN}${C_BOLD}搞定!${C_RESET} ${C_BOLD}%s${C_RESET} 已在 walrus 的保护下 🦭\n\n" "$PROJECT"
+  printf " ${C_GREEN}${C_BOLD}Done!${C_RESET} ${C_BOLD}%s${C_RESET} is now protected by walrus\n\n" "$PROJECT"
 }
 
 _init_usage() {
   cat <<'USAGE'
-用法: walrus init [选项]
+Usage: walrus init [options]
 
-  不带参数运行将进入交互式引导。
+  Run without arguments for interactive setup.
 
-选项:
-  --project <名称>         项目名称
-  --container <容器名>     PostgreSQL Docker 容器名
-  --user <用户名>          数据库用户名
-  --db <数据库名>          数据库名
-  --r2-access-key <key>    R2 Access Key (首次配置)
-  --r2-secret-key <key>    R2 Secret Key (首次配置)
-  --r2-endpoint <url>      R2 Endpoint (首次配置)
-  --bwlimit <速率>         上传限速 (默认: 2M)
-  --keep <天数>            保留天数 (默认: 7)
-  --bucket <名称>          R2 Bucket (默认: backup)
+Modes:
+  --mode <docker|direct>   PostgreSQL deployment mode (default: docker)
+
+Options:
+  --project <name>         Project name
+  --host <address>         Database host (default: localhost)
+  --port <port>            Database port (default: 5432)
+  --user <username>        Database username
+  --password <password>    Database password
+  --db <database>          Database name
+  --bwlimit <rate>         Upload rate limit (default: 2M)
+  --keep <days>            Retention days (default: 7)
+  --bucket <name>          Bucket name (default: backup)
+
+Docker mode:
+  --container <name>       PostgreSQL Docker container name
 USAGE
 }
 
 _restart_and_verify() {
-  local container="$1" user="$2" db="$3"
-  log_run "重启容器 '${container}'..."
-  docker restart "$container" >/dev/null 2>&1
-  sleep 3
+  local restart_label
+  case "$MODE" in
+    docker) restart_label="container '${CONTAINER}'" ;;
+    *)      restart_label="PostgreSQL" ;;
+  esac
 
-  local check
-  check=$(docker exec "$container" psql -U "$user" -d "$db" -t -c "SHOW archive_mode;" | xargs)
-  if [[ "$check" == "on" ]]; then
-    log_ok "WAL 归档已生效"
+  log_run "Restarting ${restart_label}..."
+  pg_restart
+
+  if pg_verify_wal_archive; then
+    log_ok "WAL archiving is active"
   else
-    die "WAL 归档启用失败，请检查: docker logs ${container}"
+    die "Failed to enable WAL archiving"
   fi
 }

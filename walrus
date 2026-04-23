@@ -58,6 +58,8 @@ source "${WALRUS_ROOT}/lib/lock.sh"
 source "${WALRUS_ROOT}/lib/project.sh"
 # shellcheck source=lib/r2.sh
 source "${WALRUS_ROOT}/lib/r2.sh"
+# shellcheck source=lib/pg.sh
+source "${WALRUS_ROOT}/lib/pg.sh"
 
 # Commands
 # shellcheck source=commands/config.sh

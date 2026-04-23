@@ -5,7 +5,6 @@
 
 declare -a _WALRUS_TMPFILES=()
 
-# Register a temp file for cleanup on exit
 mktemp_tracked() {
   local f
   f=$(mktemp "${TMPDIR:-/tmp}/walrus.XXXXXX")
@@ -13,7 +12,6 @@ mktemp_tracked() {
   echo "$f"
 }
 
-# Remove all registered temp files
 _walrus_cleanup() {
   local f
   for f in "${_WALRUS_TMPFILES[@]+"${_WALRUS_TMPFILES[@]}"}"; do
@@ -21,6 +19,5 @@ _walrus_cleanup() {
   done
 }
 
-# Setup handlers
 trap _walrus_cleanup EXIT
-trap 'echo ""; log_warn "中断"; exit 130' INT TERM
+trap 'echo ""; log_warn "Interrupted"; exit 130' INT TERM

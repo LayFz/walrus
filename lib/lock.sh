@@ -3,7 +3,6 @@
 # walrus - lock management
 # Prevents concurrent backup operations on the same project
 
-# Acquire a lock for a project. Dies if already locked by a running process.
 acquire_lock() {
   local project="$1"
   local lockfile="${WALRUS_LOCK_DIR}/${project}.lock"
@@ -13,9 +12,8 @@ acquire_lock() {
     local pid
     pid=$(<"$lockfile")
     if kill -0 "$pid" 2>/dev/null; then
-      die "项目 '${project}' 有正在运行的任务 (PID: ${pid})"
+      die "Project '${project}' has a running task (PID: ${pid})"
     fi
-    # Stale lock, remove it
     rm -f "$lockfile"
   fi
 

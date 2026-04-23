@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 #
 # walrus restore - restore database from R2 backup
+# Restores to a local Docker container for verification
 
 cmd_restore() {
   local project_arg="" db_pass="" target_time="" dl_bwlimit="50M"
@@ -13,7 +14,7 @@ cmd_restore() {
       --target-time) target_time="$2"; shift 2;;
       --bwlimit)     dl_bwlimit="$2"; shift 2;;
       -h|--help)
-        echo "用法: walrus restore [--project <名称>] [--password <密码>] [--target-time \"2026-04-22 14:30:00+08\"]"
+        echo "Usage: walrus restore [--project <name>] [--password <pass>] [--target-time \"2026-04-23 14:30:00+08\"]"
         return;;
       *) shift;;
     esac
@@ -22,26 +23,35 @@ cmd_restore() {
   resolve_project "$project_arg"
 
   banner
-  printf " ${C_BOLD}恢复项目: %s${C_RESET}\n\n" "$PROJECT"
+  printf " ${C_BOLD}Restore project: %s${C_RESET}\n\n" "$PROJECT"
+
+  local mode_label
+  if [[ "$MODE" == "docker" ]]; then
+    mode_label="Docker (${CONTAINER})"
+  else
+    mode_label="${DB_HOST}:${DB_PORT}"
+  fi
+  log_dim "Source: ${mode_label} | Restore via: local Docker container"
+  echo ""
 
   local r2_path="${R2_REMOTE}:${R2_BUCKET}/${PROJECT}"
 
   # Interactive password
   if [[ -z "$db_pass" ]]; then
-    ask_secret "数据库密码"
+    ask_secret "Database password"
     db_pass="$REPLY"
-    [[ -n "$db_pass" ]] || die "密码不能为空"
+    [[ -n "$db_pass" ]] || die "Password cannot be empty"
     echo ""
   fi
 
   # List backups
-  log_run "查找可用备份..."
+  log_run "Finding available backups..."
   local backups
   backups=$(rclone lsf "${r2_path}/base/" 2>/dev/null | sort)
-  [[ -n "$backups" ]] || die "R2 上没有找到 ${PROJECT} 的备份"
+  [[ -n "$backups" ]] || die "No backups found for ${PROJECT} on R2"
 
   echo ""
-  printf " ${C_DIM}可用备份:${C_RESET}\n"
+  printf " ${C_DIM}Available backups:${C_RESET}\n"
   local i=1
   while read -r f; do
     local fdate
@@ -55,13 +65,13 @@ cmd_restore() {
 
   if $interactive; then
     echo ""
-    ask "选择备份编号 (默认最新)" "$((i - 1))"
+    ask "Select backup number (default: latest)" "$((i - 1))"
     latest=$(echo "$backups" | sed -n "${REPLY}p")
-    [[ -n "$latest" ]] || die "无效选择"
+    [[ -n "$latest" ]] || die "Invalid selection"
 
     if [[ -z "$target_time" ]]; then
       echo ""
-      ask "恢复到指定时间点? 留空则恢复到最新" ""
+      ask "Restore to specific point in time? (leave empty for latest)" ""
       target_time="$REPLY"
     fi
   fi
@@ -73,15 +83,15 @@ cmd_restore() {
   rm -rf "$work_dir"
   mkdir -p "${work_dir}"/{base,wal,pgdata}
 
-  log_run "下载 base backup: ${latest}"
+  log_run "Downloading base backup: ${latest}"
   rclone copy "${r2_path}/base/${latest}" "${work_dir}/base/" --bwlimit "$dl_bwlimit" --progress
-  log_ok "下载完成"
+  log_ok "Download complete"
 
-  log_run "下载 WAL..."
+  log_run "Downloading WAL..."
   rclone copy "${r2_path}/wal/" "${work_dir}/wal/" --bwlimit "$dl_bwlimit" --progress
-  log_ok "WAL 下载完成"
+  log_ok "WAL download complete"
 
-  log_run "解压..."
+  log_run "Extracting..."
   tar xzf "${work_dir}/base/${latest}" -C "${work_dir}/pgdata/"
 
   mkdir -p "${work_dir}/pgdata/pg_wal"
@@ -101,13 +111,15 @@ recovery_target = 'immediate'"
   echo "$restore_conf" >> "${work_dir}/pgdata/postgresql.auto.conf"
 
   chown -R 999:999 "${work_dir}/pgdata"
-  log_ok "恢复配置完成"
+  log_ok "Recovery configured"
 
   # Launch
+  require_cmd docker
+
   local restore_name="walrus_${PROJECT}_restore"
   docker rm -f "$restore_name" 2>/dev/null || true
 
-  log_run "启动数据库..."
+  log_run "Starting database..."
   docker run -d \
     --name "$restore_name" \
     -v "${work_dir}/pgdata:/var/lib/postgresql/data" \
@@ -117,7 +129,7 @@ recovery_target = 'immediate'"
     postgres:16 >/dev/null
 
   # Wait for ready
-  log_run "等待数据库就绪..."
+  log_run "Waiting for database to be ready..."
   local attempts=0
   while [[ $attempts -lt 30 ]]; do
     if docker exec "$restore_name" psql -U "$DB_USER" -d "$DB_NAME" -c "SELECT 1;" &>/dev/null; then
@@ -129,13 +141,13 @@ recovery_target = 'immediate'"
 
   echo ""
   if docker exec "$restore_name" psql -U "$DB_USER" -d "$DB_NAME" -c "SELECT 1;" &>/dev/null; then
-    printf " ${C_GREEN}${C_BOLD}恢复成功!${C_RESET} 🦭\n\n"
-    log_dim "连接:  docker exec -it ${restore_name} psql -U ${DB_USER} -d ${DB_NAME}"
-    log_dim "端口:  15432"
-    log_dim "清理:  docker rm -f ${restore_name} && rm -rf ${work_dir}"
+    printf " ${C_GREEN}${C_BOLD}Restore successful!${C_RESET}\n\n"
+    log_dim "Connect:  docker exec -it ${restore_name} psql -U ${DB_USER} -d ${DB_NAME}"
+    log_dim "Port:     15432"
+    log_dim "Cleanup:  docker rm -f ${restore_name} && rm -rf ${work_dir}"
   else
-    log_warn "数据库可能仍在恢复中"
-    log_dim "查看日志: docker logs -f ${restore_name}"
+    log_warn "Database may still be recovering"
+    log_dim "View logs: docker logs -f ${restore_name}"
   fi
   echo ""
 }

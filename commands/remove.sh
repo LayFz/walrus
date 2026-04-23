@@ -9,18 +9,18 @@ cmd_remove() {
     case $1 in
       --project) project_arg="$2"; shift 2;;
       --purge)   purge=true; shift;;
-      -h|--help) echo "用法: walrus remove --project <名称> [--purge]"; return;;
+      -h|--help) echo "Usage: walrus remove --project <name> [--purge]"; return;;
       *) shift;;
     esac
   done
 
-  [[ -n "$project_arg" ]] || die "请指定 --project"
+  [[ -n "$project_arg" ]] || die "Please specify --project"
 
   local conf="${WALRUS_CONF_DIR}/${project_arg}.conf"
-  [[ -f "$conf" ]] || die "项目 '${project_arg}' 不存在"
+  [[ -f "$conf" ]] || die "Project '${project_arg}' does not exist"
 
-  if ! confirm "确定移除项目 '${project_arg}'?"; then
-    echo "  取消"
+  if ! confirm "Remove project '${project_arg}'?"; then
+    echo "  Cancelled"
     return
   fi
 
@@ -40,7 +40,7 @@ cmd_remove() {
   crontab -l 2>/dev/null | grep -v "$cron_tag" > "$tmpfile" || true
   crontab "$tmpfile"
 
-  # Remove systemd units for this project
+  # Remove systemd units
   _remove_service "$project_arg"
 
   # Remove local data
@@ -49,13 +49,13 @@ cmd_remove() {
   rm -rf "${WALRUS_LOG_DIR:?}/${project_arg}"
   rm -f "$conf"
 
-  log_ok "项目 '${project_arg}' 已移除"
+  log_ok "Project '${project_arg}' removed"
 
   if $purge && [[ -n "$saved_remote" ]] && [[ -n "$saved_bucket" ]]; then
-    log_run "清除 R2 备份..."
+    log_run "Purging R2 backups..."
     rclone purge "${saved_remote}:${saved_bucket}/${project_arg}/" 2>/dev/null || true
-    log_ok "R2 备份已清除"
+    log_ok "R2 backups purged"
   else
-    log_dim "R2 备���已保留 (添加 --purge 同时删除)"
+    log_dim "R2 backups retained (add --purge to delete)"
   fi
 }
