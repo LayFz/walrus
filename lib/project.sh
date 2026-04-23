@@ -65,7 +65,9 @@ save_project_conf() {
   local bwlimit="$5" days_keep="$6" r2_bucket="$7"
 
   mkdir -p "${WALRUS_CONF_DIR}"
-  cat > "${WALRUS_CONF_DIR}/${project}.conf" <<CONF
+  chmod 0700 "${WALRUS_CONF_DIR}"
+  local _conf_file="${WALRUS_CONF_DIR}/${project}.conf"
+  cat > "$_conf_file" <<CONF
 # walrus project config — ${project}
 # Generated: $(date '+%Y-%m-%d %H:%M:%S')
 PROJECT="${project}"
@@ -82,8 +84,10 @@ R2_BUCKET="${r2_bucket}"
 CONF
 
   if [[ "$mode" == "docker" ]]; then
-    cat >> "${WALRUS_CONF_DIR}/${project}.conf" <<CONF
+    cat >> "$_conf_file" <<CONF
 CONTAINER="${CONTAINER}"
 CONF
   fi
+
+  chmod 0600 "$_conf_file"
 }

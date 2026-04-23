@@ -56,22 +56,39 @@ cmd_backup() {
     _blog "WAL synced"
   fi
 
-  # ── Cleanup ──
+  # ── Cleanup (always keep at least 1 backup) ──
   _blog "Cleaning up backups older than ${DAYS_KEEP} days..."
 
-  find "$local_dir" -name "base_*.tar.gz" -mtime +"$DAYS_KEEP" -delete 2>/dev/null || true
+  # Local: delete old backups but keep the latest one
+  local local_backups
+  local_backups=$(ls -t "$local_dir"/base_*.tar.gz 2>/dev/null || true)
+  if [[ -n "$local_backups" ]]; then
+    echo "$local_backups" | tail -n +2 | while read -r f; do
+      if [[ -n "$f" ]] && find "$f" -mtime +"$DAYS_KEEP" -print -quit 2>/dev/null | grep -q .; then
+        rm -f "$f"
+      fi
+    done
+  fi
   find "$wal_dir" -type f -mtime +"$DAYS_KEEP" -delete 2>/dev/null || true
 
+  # R2: delete old backups but keep at least 1
   local cutoff
   cutoff=$(date -d "-${DAYS_KEEP} days" +%Y%m%d 2>/dev/null || date -v-"${DAYS_KEEP}"d +%Y%m%d)
-  rclone lsf "${r2_path}/base/" 2>/dev/null | while read -r file; do
-    local fdate
-    fdate=$(echo "$file" | grep -Eo '[0-9]{8}' | head -1 || true)
-    if [[ -n "$fdate" ]] && [[ "$fdate" -lt "$cutoff" ]] 2>/dev/null; then
-      _blog "Deleting: $file"
-      rclone deletefile "${r2_path}/base/${file}"
-    fi
-  done
+  local r2_files
+  r2_files=$(rclone lsf "${r2_path}/base/" 2>/dev/null | sort || true)
+  local r2_total
+  r2_total=$(echo "$r2_files" | grep -c . 2>/dev/null || echo 0)
+
+  if [[ "$r2_total" -gt 1 ]]; then
+    echo "$r2_files" | head -n $((r2_total - 1)) | while read -r file; do
+      local fdate
+      fdate=$(echo "$file" | grep -Eo '[0-9]{8}' | head -1 || true)
+      if [[ -n "$fdate" ]] && [[ "$fdate" -lt "$cutoff" ]] 2>/dev/null; then
+        _blog "Deleting: $file"
+        rclone deletefile "${r2_path}/base/${file}"
+      fi
+    done
+  fi
 
   rclone delete "${r2_path}/wal/" --min-age "${DAYS_KEEP}d" 2>/dev/null || true
 

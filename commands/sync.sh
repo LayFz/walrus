@@ -20,20 +20,32 @@ cmd_sync() {
 
   mkdir -p "$wal_dir"
 
-  # Copy WAL from PG host to local walrus data dir
+  # Copy WAL from PG host to local staging dir
   if [[ "$MODE" == "docker" ]]; then
     local wal_archive_dir="${WALRUS_CONTAINER_WAL_DIR}"
     docker cp "$CONTAINER:${wal_archive_dir}/." "$wal_dir/" 2>/dev/null || true
-    docker exec "$CONTAINER" sh -c "rm -f ${wal_archive_dir}/*" 2>/dev/null || true
   else
     local wal_archive_dir="${WALRUS_DATA_DIR}/wal_archive/${PROJECT}"
     mkdir -p "$wal_archive_dir"
     cp -f "${wal_archive_dir}"/* "$wal_dir/" 2>/dev/null || true
-    rm -f "${wal_archive_dir}"/* 2>/dev/null || true
   fi
 
-  # Upload new WAL files
+  # Upload new WAL files, only delete source after successful upload
   if [[ -n "$(ls -A "$wal_dir" 2>/dev/null)" ]]; then
-    rclone copy "${wal_dir}/" "${r2_path}/" --bwlimit "$BWLIMIT" --checksum --quiet
+    if rclone copy "${wal_dir}/" "${r2_path}/" --bwlimit "$BWLIMIT" --checksum --quiet; then
+      # Upload succeeded, safe to clean up source WAL
+      if [[ "$MODE" == "docker" ]]; then
+        docker exec "$CONTAINER" sh -c "rm -f ${wal_archive_dir}/*" 2>/dev/null || true
+      else
+        rm -f "${wal_archive_dir}"/* 2>/dev/null || true
+      fi
+    fi
+  else
+    # No new WAL files to upload, still clean up empty source
+    if [[ "$MODE" == "docker" ]]; then
+      docker exec "$CONTAINER" sh -c "rm -f ${wal_archive_dir}/*" 2>/dev/null || true
+    else
+      rm -f "${wal_archive_dir}"/* 2>/dev/null || true
+    fi
   fi
 }
