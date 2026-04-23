@@ -17,9 +17,9 @@
 
 <p align="center">
   <a href="./docs/README_CN.md">简体中文</a> |
-  <a href="#quick-start">Quick Start</a> |
-  <a href="#how-it-works">How It Works</a> |
-  <a href="https://github.com/LayFz/walrus/releases">Releases</a>
+  <a href="./docs/README_TW.md">繁體中文</a> |
+  <a href="./docs/README_JA.md">日本語</a> |
+  <a href="./docs/README_FR.md">Français</a>
 </p>
 
 ---
