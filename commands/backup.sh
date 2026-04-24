@@ -31,7 +31,11 @@ cmd_backup() {
   local tmp_dir="/tmp/walrus_backup_${PROJECT}"
 
   _blog "Starting base backup..."
-  pg_run_basebackup "$tmp_dir"
+  if ! pg_run_basebackup "$tmp_dir"; then
+    _blog "Base backup failed!"
+    rm -rf "$tmp_dir"
+    die "pg_basebackup failed, check connection and pg_hba.conf replication settings"
+  fi
 
   mv "${tmp_dir}/base.tar.gz" "${local_dir}/base_${date_tag}.tar.gz"
   rm -rf "$tmp_dir"
