@@ -16,9 +16,9 @@ load_project_conf() {
   DB_PASS="${DB_PASS:-}"
 
   # Migrate old mode names
-  [[ "$MODE" == "ssh" ]] && MODE="direct"
-  [[ "$MODE" == "local" ]] && MODE="direct"
-  [[ "$MODE" == "remote" ]] && MODE="direct"
+  case "$MODE" in
+    ssh|local|remote) MODE="direct" ;;
+  esac
 }
 
 resolve_project() {
