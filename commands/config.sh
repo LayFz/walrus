@@ -154,8 +154,7 @@ _config_existing() {
   [[ -n "$selected" ]] || { log_err "Invalid choice"; return 1; }
 
   if [[ "$selected" != "${WALRUS_R2_REMOTE}" ]]; then
-    rclone config delete "${WALRUS_R2_REMOTE}" >/dev/null 2>&1 || true
-    rclone config create "${WALRUS_R2_REMOTE}" alias remote="${selected}:" >/dev/null 2>&1
+    _write_remote "type=alias" "remote=${selected}:"
   fi
 
   echo ""
@@ -166,7 +165,6 @@ _config_existing() {
   log_run "Verifying connection..."
 
   if ! r2_check_connection; then
-    rclone config delete "${WALRUS_R2_REMOTE}" >/dev/null 2>&1
     log_err "Connection failed, please check remote '${selected}' configuration"
     echo ""
     return 1
@@ -199,7 +197,6 @@ _config_bucket_and_verify() {
     log_dim "Test manually: rclone lsd ${WALRUS_R2_REMOTE}: -vv"
     echo ""
     if confirm "Re-enter?"; then
-      rclone config delete "${WALRUS_R2_REMOTE}" >/dev/null 2>&1 || true
       echo ""
       return 1
     fi
@@ -216,15 +213,44 @@ _config_bucket_and_verify() {
 # ── Write rclone remote config ──
 
 _write_remote() {
-  rclone config delete "${WALRUS_R2_REMOTE}" >/dev/null 2>&1 || true
+  local conf_file="$RCLONE_CONFIG"
+  local conf_dir
+  conf_dir="$(dirname "$conf_file")"
+  mkdir -p "$conf_dir"
 
-  # shellcheck disable=SC2068
-  rclone config create "${WALRUS_R2_REMOTE}" s3 $@ >/dev/null 2>&1 \
-    || die "Config write failed, check permissions: $(rclone config file 2>/dev/null | tail -1)"
+  # Remove existing section if present
+  if [[ -f "$conf_file" ]]; then
+    local tmp_file="${conf_file}.tmp"
+    awk -v section="[${WALRUS_R2_REMOTE}]" '
+      $0 == section { skip=1; next }
+      /^\[/ { skip=0 }
+      !skip { print }
+    ' "$conf_file" > "$tmp_file"
+    mv -f "$tmp_file" "$conf_file"
+  fi
 
-  # Verify the section was actually written
+  # Append new section directly to config file
+  local has_type=false
+  for param in "$@"; do
+    [[ "${param%%=*}" == "type" ]] && has_type=true
+  done
+
+  {
+    echo "[${WALRUS_R2_REMOTE}]"
+    $has_type || echo "type = s3"
+    for param in "$@"; do
+      local key="${param%%=*}"
+      local val="${param#*=}"
+      echo "${key} = ${val}"
+    done
+    echo ""
+  } >> "$conf_file"
+
+  chmod 0600 "$conf_file"
+
+  # Verify
   if ! rclone listremotes 2>/dev/null | grep -q "^${WALRUS_R2_REMOTE}:$"; then
-    die "Config write failed, remote '${WALRUS_R2_REMOTE}' not found after create"
+    die "Config write failed, remote '${WALRUS_R2_REMOTE}' not found in ${conf_file}"
   fi
 }
 
