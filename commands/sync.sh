@@ -17,8 +17,11 @@ cmd_sync() {
 
   local wal_dir="${WALRUS_DATA_DIR}/wal/${PROJECT}"
   local r2_path="${R2_REMOTE}:${R2_BUCKET}/${PROJECT}/wal"
+  local logfile="${WALRUS_LOG_DIR}/${PROJECT}/sync.log"
 
-  mkdir -p "$wal_dir"
+  mkdir -p "$wal_dir" "$(dirname "$logfile")"
+
+  _slog() { ts_log "$PROJECT" "$1" "$logfile"; }
 
   # Copy WAL from PG host to local staging dir
   local copy_ok=false
@@ -37,6 +40,9 @@ cmd_sync() {
 
   # Upload new WAL files, only delete source after successful upload
   if [[ -n "$(ls -A "$wal_dir" 2>/dev/null)" ]]; then
+    local wal_count
+    wal_count=$(ls -1 "$wal_dir" 2>/dev/null | wc -l | xargs)
+    _slog "Syncing ${wal_count} WAL file(s)..."
     if rclone copy "${wal_dir}/" "${r2_path}/" --bwlimit "$BWLIMIT" --checksum --quiet; then
       # Upload succeeded and copy succeeded, safe to clean up source WAL
       if $copy_ok; then
@@ -46,6 +52,9 @@ cmd_sync() {
           rm -f "${wal_archive_dir}"/* 2>/dev/null || true
         fi
       fi
+      _slog "Done"
+    else
+      _slog "Upload failed"
     fi
   fi
 }

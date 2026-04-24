@@ -20,9 +20,18 @@ cmd_logs() {
   local backup_log="${WALRUS_LOG_DIR}/${PROJECT}/backup.log"
   local sync_log="${WALRUS_LOG_DIR}/${PROJECT}/sync.log"
 
+  # Collect existing log files
+  local log_files=()
+  [[ -f "$backup_log" ]] && log_files+=("$backup_log")
+  [[ -f "$sync_log" ]] && log_files+=("$sync_log")
+
+  if [[ ${#log_files[@]} -eq 0 ]]; then
+    log_warn "No logs found, backups may not have run yet"
+    return
+  fi
+
   if $follow; then
-    [[ -f "$backup_log" ]] || die "Log file does not exist"
-    tail -f "$backup_log"
+    tail -f "${log_files[@]}"
     return
   fi
 
@@ -33,12 +42,8 @@ cmd_logs() {
   fi
 
   if [[ -f "$sync_log" ]]; then
-    printf " ${C_BOLD}Sync Log${C_RESET} ${C_DIM}(last 10 lines)${C_RESET}\n\n"
-    tail -10 "$sync_log"
+    printf " ${C_BOLD}Sync Log${C_RESET} ${C_DIM}(last %s lines)${C_RESET}\n\n" "$lines"
+    tail -"$lines" "$sync_log"
     echo ""
-  fi
-
-  if [[ ! -f "$backup_log" ]] && [[ ! -f "$sync_log" ]]; then
-    log_warn "No logs found"
   fi
 }

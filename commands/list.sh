@@ -22,16 +22,20 @@ cmd_list() {
   # Base backups
   printf " ${C_CYAN}Base Backups${C_RESET}\n"
   local bases
-  bases=$(rclone lsf "${r2_path}/base/" --format "sp" 2>/dev/null | sort || true)
+  bases=$(rclone lsl "${r2_path}/base/" 2>/dev/null | sort || true)
   if [[ -z "$bases" ]]; then
     log_dim "  (empty)"
   else
     while read -r line; do
       local size name
       size=$(echo "$line" | awk '{print $1}')
-      name=$(echo "$line" | awk '{print $2}')
+      name=$(echo "$line" | awk '{print $NF}')
       local hr_size
-      hr_size=$(numfmt --to=iec-i --suffix=B "$size" 2>/dev/null || echo "${size}B")
+      if command -v numfmt &>/dev/null; then
+        hr_size=$(numfmt --to=iec-i --suffix=B "$size" 2>/dev/null || echo "${size}B")
+      else
+        hr_size=$(awk "BEGIN{s=$size; u=\"B\"; split(\"K M G\",a); for(i=1;s>=1024&&i<=3;i++){s/=1024;u=a[i]\"iB\"} printf \"%.1f%s\",s,u}")
+      fi
       local fdate
       fdate=$(echo "$name" | sed 's/base_\([0-9]\{4\}\)\([0-9]\{2\}\)\([0-9]\{2\}\)_\([0-9]\{2\}\)\([0-9]\{2\}\)\([0-9]\{2\}\).*/\1-\2-\3 \4:\5:\6/')
       printf "   %s  ${C_DIM}%s${C_RESET}  %s\n" "$fdate" "$hr_size" "$name"
