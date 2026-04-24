@@ -15,16 +15,23 @@
 </p>
 
 <p align="center">
-  <a href="../README.md">English</a> |
   <a href="./README_CN.md">简体中文</a> |
   <a href="./README_TW.md">繁體中文</a> |
+  <a href="../README.md">English</a> |
   <a href="./README_JA.md">日本語</a> |
-  Français
+  Francais
 </p>
 
 ---
 
-Une seule commande pour sauvegarder toutes vos bases PostgreSQL sur Cloudflare R2. Concu pour les indie hackers — multi-projets, multi-serveurs, zero prise de tete.
+Une seule commande pour sauvegarder toutes vos bases PostgreSQL sur Cloudflare R2. Sauvegardez plusieurs serveurs au meme endroit, restaurez depuis n'importe ou — ne perdez plus jamais vos donnees.
+
+## Pourquoi walrus ?
+
+- **Sauvegarde multi-serveurs** — Gerez les sauvegardes de tous vos serveurs en un seul endroit, quel que soit le nombre de bases de donnees
+- **Reprise apres sinistre** — Sauvegardes stockees sur le cloud distant (R2/S3), restauration sur n'importe quelle machine meme si le serveur d'origine est completement perdu
+- **Restauration point-in-time** — L'archivage WAL permet de restaurer a n'importe quel moment des 7 derniers jours, pas seulement la derniere sauvegarde
+- **Configurez et oubliez** — Configuration unique, puis tout est automatique : sauvegarde complete quotidienne + synchronisation WAL toutes les 5 minutes
 
 ## Fonctionnalites
 
@@ -36,62 +43,62 @@ Une seule commande pour sauvegarder toutes vos bases PostgreSQL sur Cloudflare R
 - **Multi-projets** — Differentes bases sur differents serveurs, tout organise dans un seul bucket R2
 - **Nettoyage automatique** — Retention de 7 jours par defaut, nettoyage synchronise local et R2
 - **Restauration en un clic** — Selection interactive des sauvegardes avec restauration point-in-time (PITR)
-- **Integration systemd** — Fonctionne comme un service systeme, demarre au boot
+- **Mise a jour automatique** — `walrus update` pour mettre a jour, pas besoin de reinstaller
 - **Securite de concurrence** — Les fichiers de verrou empechent les sauvegardes en double
 
-## Demarrage rapide
-
-### Installation
+## Etape 1 : Installation
 
 ```bash
 # Installer la derniere version
 curl -sSL https://raw.githubusercontent.com/LayFz/walrus/main/install.sh | sudo bash
-
-# Installer une version specifique
-curl -sSL https://raw.githubusercontent.com/LayFz/walrus/main/install.sh | WALRUS_VERSION=2.0.0 sudo -E bash
 ```
 
-L'installateur configure automatiquement `postgresql-client` s'il n'est pas deja present.
+L'installateur configure automatiquement `postgresql-client` et `rclone` s'ils ne sont pas deja presents.
 
-### Mise a jour
+## Etape 2 : Mise a jour (utilisateurs existants)
 
 ```bash
-# Mettre a jour vers la derniere version (meme commande que l'installation)
-curl -sSL https://raw.githubusercontent.com/LayFz/walrus/main/install.sh | sudo bash
+# Mise a jour automatique vers la derniere version
+walrus update
 ```
 
 Les configurations de projets et les parametres rclone existants sont preserves lors de la mise a jour.
 
-### Configuration
+## Etape 3 : Configurer le stockage distant
 
 ```bash
-# 1. Configurer le stockage R2 (interactif)
 walrus config
-
-# 2. Enregistrer un projet (interactif)
-walrus init
-
-# 3. Verifier que tout fonctionne
-walrus status
 ```
 
-## Modes de deploiement
+Configuration interactive — choisissez votre fournisseur de stockage (Cloudflare R2, Amazon S3, MinIO, etc.), entrez vos identifiants, et walrus verifie automatiquement la connexion.
 
-### Conteneur Docker
+## Etape 4 : Enregistrer un projet et demarrer la sauvegarde
 
-PostgreSQL tourne dans Docker. walrus se connecte via le port mappe.
+```bash
+walrus init
+```
+
+`walrus init` vous guide a travers :
+1. Selection du mode de deploiement (Docker / Connexion directe)
+2. Saisie des identifiants de la base de donnees
+3. Configuration de l'archivage WAL
+4. Installation des timers systemd (sauvegarde complete quotidienne a 03:00, synchronisation WAL toutes les 5 min)
+5. Execution d'un test de bout en bout
+
+Apres `init`, les sauvegardes s'executent automatiquement. Aucune action supplementaire n'est necessaire.
+
+### Modes de deploiement
+
+**Docker** — PostgreSQL tourne dans un conteneur Docker. walrus execute `pg_basebackup` a l'interieur du conteneur, pas besoin d'exposer les ports.
 
 ```bash
 walrus init --mode docker \
   --project myapp \
   --container postgres \
-  --host localhost --port 5432 \
   --user myuser --db mydb
 ```
 
-### Connexion directe
-
-PostgreSQL est accessible via host:port — que ce soit en localhost, un serveur distant ou un service manage comme RDS.
+**Connexion directe** — PostgreSQL est accessible via host:port — que ce soit en localhost, un serveur distant ou un service manage comme RDS.
 
 ```bash
 walrus init --mode direct \
@@ -101,6 +108,58 @@ walrus init --mode direct \
 ```
 
 > En mode interactif, pas besoin de retenir les options — `walrus init` vous guide etape par etape.
+
+## Etape 5 : Surveillance et gestion
+
+```bash
+# Verifier l'etat des projets et la sante des services
+walrus status
+
+# Voir les sauvegardes sur R2
+walrus list
+
+# Voir les logs de sauvegarde et de synchronisation
+walrus logs
+
+# Suivre les logs en temps reel
+walrus logs -f
+
+# Gerer les services systemd
+walrus service status
+walrus service stop
+walrus service start
+```
+
+### Services programmes
+
+| Unite | Description | Frequence |
+|-------|-------------|-----------|
+| `walrus-sync@<project>.timer` | Synchronisation incrementale WAL | Toutes les 5 min |
+| `walrus-backup@<project>.timer` | Sauvegarde physique complete + nettoyage | Quotidien 03:00 |
+
+## Etape 6 : Restauration (depuis n'importe quelle machine)
+
+La restauration fonctionne sur **n'importe quelle machine** avec walrus et Docker installes — meme un tout nouveau serveur. Tant que vous pouvez vous connecter a R2, vous pouvez recuperer vos donnees.
+
+```bash
+# Sur la nouvelle machine : installer walrus et configurer R2
+curl -sSL https://raw.githubusercontent.com/LayFz/walrus/main/install.sh | sudo bash
+walrus config
+
+# Restauration interactive (selectionner la sauvegarde, entrer le mot de passe)
+walrus restore
+
+# Ou restaurer a un point dans le temps specifique
+walrus restore --project myapp --password secret \
+  --target-time "2026-04-23 14:30:00+08"
+```
+
+Processus de restauration :
+1. Telecharge la sauvegarde complete + les fichiers WAL depuis R2
+2. Demarre un conteneur Docker temporaire (port 15432) avec la version PostgreSQL correspondante
+3. Applique le rejeu WAL pour la restauration point-in-time
+4. Vous verifiez les donnees : `docker exec -it walrus_myapp_restore psql -U myuser -d mydb`
+5. Une fois confirme, migrez les donnees en production
 
 ## Commandes
 
@@ -117,21 +176,9 @@ walrus init --mode direct \
 | `walrus service` | Gerer les services systemd |
 | `walrus remove` | Supprimer un projet |
 | `walrus update` | Mettre a jour walrus |
+| `walrus help` | Afficher l'aide |
 
-> Quand un seul projet est enregistre, `--project` peut etre omis. Alias : `st`=status, `ls`=list, `rm`=remove
-
-## Restauration
-
-```bash
-# Restauration interactive
-walrus restore
-
-# Restaurer a un point dans le temps specifique
-walrus restore --project myapp --password secret \
-  --target-time "2026-04-23 14:30:00+08"
-```
-
-Toutes les restaurations demarrent un conteneur Docker local (port 15432) pour verification. Une fois confirme, vous pouvez migrer les donnees en production.
+> Quand un seul projet est enregistre, `--project` peut etre omis. Alias : `st`=status, `ls`=list, `rm`=remove, `svc`=service
 
 ## Fonctionnement
 
@@ -152,14 +199,49 @@ Quotidien 03:00                          Toutes les 5 min
                           ▼
                  ┌─────────────────┐
                  │  Cloudflare R2  │
+                 │  (S3 / MinIO)   │
                  └─────────────────┘
 ```
+
+### Architecture multi-projets
+
+```
+Votre serveur (walrus)
+├── walrus init --mode docker --project shop     # Docker PostgreSQL
+├── walrus init --mode direct --project blog     # PostgreSQL local
+├── walrus init --mode direct --project saas     # PostgreSQL distant
+│
+└── Toutes les sauvegardes -> Cloudflare R2
+                     backup/
+                     ├── shop/
+                     │   ├── base/
+                     │   └── wal/
+                     ├── blog/
+                     │   ├── base/
+                     │   └── wal/
+                     └── saas/
+                         ├── base/
+                         └── wal/
+```
+
+## Impact sur les performances
+
+walrus est concu pour etre sur en production :
+
+| Mesure | Details |
+|--------|---------|
+| `--checkpoint=spread` | Repartit les I/O de checkpoint, evite les pics |
+| `--max-rate=30M` | Limite la vitesse de lecture disque |
+| `--bwlimit 2M` | Limitation du debit d'upload, impact reseau negligeable |
+| Archive WAL (`cp`) | Simple copie de fichier, overhead minimal |
+
+Ces valeurs par defaut sont sures pour les bases sous charge intensive.
 
 ## Prerequis
 
 - Linux ou macOS
 - Bash 4+
-- PostgreSQL 12+ (outils client installes automatiquement)
+- PostgreSQL 12+ (mode Docker : outils client non requis sur l'hote)
 - Cloudflare R2 / Amazon S3 / tout stockage compatible S3
 - **Mode Docker** : Docker installe + conteneur PostgreSQL
 - **Restauration** : Docker requis (tous les modes)
@@ -169,7 +251,6 @@ Quotidien 03:00                          Toutes les 5 min
 
 ```bash
 walrus service disable
-crontab -l 2>/dev/null | grep -v "walrus:" | crontab -
 rm -f /usr/local/bin/walrus
 rm -rf /opt/walrus
 rm -f /etc/systemd/system/walrus-*
