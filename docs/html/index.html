@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>walrus - PostgreSQL backup buddy for indie hackers</title>
+  <meta name="description" content="One command to back up all your PostgreSQL databases to Cloudflare R2. Multi-server backup, disaster recovery, point-in-time restore.">
+  <meta name="keywords" content="PostgreSQL, backup, walrus, indie hacker, Cloudflare R2, disaster recovery, PITR, pg_basebackup, WAL">
+  <meta name="author" content="LayFz">
+  <meta name="robots" content="index, follow">
+  <link rel="canonical" href="https://layfz.github.io/walrus/">
+  <meta property="og:title" content="walrus - PostgreSQL backup buddy for indie hackers">
+  <meta property="og:description" content="One command to back up all your PostgreSQL databases to Cloudflare R2. Multi-server, disaster recovery, zero hassle.">
+  <meta property="og:type" content="website">
+  <meta property="og:image" content="https://layfz.github.io/walrus/html/images/logo.png">
+  <link rel="icon" type="image/png" href="images/logo.png">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- Language Switcher -->
+  <nav class="lang-bar">
+    <button class="lang-btn active" data-lang="en">EN</button>
+    <button class="lang-btn" data-lang="zh">中文</button>
+    <button class="lang-btn" data-lang="tw">繁體</button>
+    <button class="lang-btn" data-lang="ja">日本語</button>
+    <button class="lang-btn" data-lang="fr">FR</button>
+  </nav>
+
+  <!-- Hero -->
+  <section class="hero">
+    <img src="images/logo.png" alt="walrus logo" class="hero-logo" width="180" height="180">
+    <h1 data-i18n="hero.title">walrus</h1>
+    <p class="hero-tagline" data-i18n="hero.tagline">PostgreSQL backup buddy for indie hackers</p>
+    <p class="hero-desc" data-i18n="hero.desc">One command to back up all your PostgreSQL databases to Cloudflare R2. Multi-server, disaster recovery, zero hassle.</p>
+    <div class="hero-install">
+      <div class="terminal">
+        <span class="terminal-prompt">$</span>
+        <code id="install-cmd">curl -sSL https://raw.githubusercontent.com/LayFz/walrus/main/install.sh | sudo bash</code>
+        <button class="copy-btn" onclick="copyInstall()" data-i18n-title="hero.copy" title="Copy">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
+        </button>
+      </div>
+    </div>
+    <div class="hero-actions">
+      <a href="https://github.com/LayFz/walrus" class="btn btn-primary" target="_blank" rel="noopener">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
+        <span>GitHub</span>
+      </a>
+      <a href="https://github.com/LayFz/walrus/releases" class="btn btn-secondary" target="_blank" rel="noopener" data-i18n="hero.releases">Releases</a>
+    </div>
+  </section>
+
+  <!-- Why walrus -->
+  <section class="section why">
+    <h2 data-i18n="why.title">Why walrus?</h2>
+    <div class="cards">
+      <div class="card">
+        <div class="card-icon">
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="margin-left:-8px;opacity:0.6"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+        </div>
+        <h3 data-i18n="why.multi.title">Multi-Server Backup</h3>
+        <p data-i18n="why.multi.desc">Manage backups from all your servers in one place, no matter how many databases you run.</p>
+      </div>
+      <div class="card">
+        <div class="card-icon">
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+        </div>
+        <h3 data-i18n="why.disaster.title">Disaster Recovery</h3>
+        <p data-i18n="why.disaster.desc">Backups stored on remote cloud storage. Restore on any machine even if the original server is completely gone.</p>
+      </div>
+      <div class="card">
+        <div class="card-icon">
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+        </div>
+        <h3 data-i18n="why.pitr.title">Point-in-Time Recovery</h3>
+        <p data-i18n="why.pitr.desc">Restore to any moment in the last 7 days, not just the last backup. WAL archiving every 5 minutes.</p>
+      </div>
+      <div class="card">
+        <div class="card-icon">
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+        </div>
+        <h3 data-i18n="why.auto.title">Set It and Forget It</h3>
+        <p data-i18n="why.auto.desc">One-time setup, then fully automatic. Daily full backups + WAL sync every 5 minutes.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- How It Works -->
+  <section class="section steps">
+    <h2 data-i18n="steps.title">How It Works</h2>
+    <div class="steps-grid">
+      <div class="step">
+        <div class="step-num">1</div>
+        <h3 data-i18n="steps.s1.title">Install</h3>
+        <div class="step-code"><code>curl ... | sudo bash</code></div>
+      </div>
+      <div class="step-arrow">&rarr;</div>
+      <div class="step">
+        <div class="step-num">2</div>
+        <h3 data-i18n="steps.s2.title">Configure Storage</h3>
+        <div class="step-code"><code>walrus config</code></div>
+      </div>
+      <div class="step-arrow">&rarr;</div>
+      <div class="step">
+        <div class="step-num">3</div>
+        <h3 data-i18n="steps.s3.title">Register Project</h3>
+        <div class="step-code"><code>walrus init</code></div>
+      </div>
+      <div class="step-arrow">&rarr;</div>
+      <div class="step">
+        <div class="step-num">4</div>
+        <h3 data-i18n="steps.s4.title">Auto Backup</h3>
+        <p class="step-desc" data-i18n="steps.s4.desc">Daily 03:00 + WAL every 5 min</p>
+      </div>
+      <div class="step-arrow">&rarr;</div>
+      <div class="step">
+        <div class="step-num">5</div>
+        <h3 data-i18n="steps.s5.title">Monitor</h3>
+        <div class="step-code"><code>walrus status</code></div>
+      </div>
+      <div class="step-arrow">&rarr;</div>
+      <div class="step">
+        <div class="step-num">6</div>
+        <h3 data-i18n="steps.s6.title">Restore Anywhere</h3>
+        <div class="step-code"><code>walrus restore</code></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Features -->
+  <section class="section features">
+    <h2 data-i18n="features.title">Features</h2>
+    <div class="feature-grid">
+      <div class="feature">
+        <span class="feature-tag">Docker / Direct</span>
+        <span data-i18n="features.modes">Two deployment modes, unified management</span>
+      </div>
+      <div class="feature">
+        <span class="feature-tag">pg_basebackup</span>
+        <span data-i18n="features.physical">Physical backups, zero impact on your app</span>
+      </div>
+      <div class="feature">
+        <span class="feature-tag">WAL</span>
+        <span data-i18n="features.wal">Incremental sync every 5 minutes</span>
+      </div>
+      <div class="feature">
+        <span class="feature-tag">2MB/s</span>
+        <span data-i18n="features.bwlimit">Bandwidth limiting, won't affect production</span>
+      </div>
+      <div class="feature">
+        <span class="feature-tag">R2 / S3</span>
+        <span data-i18n="features.storage">Cloudflare R2, Amazon S3, MinIO, any S3-compatible</span>
+      </div>
+      <div class="feature">
+        <span class="feature-tag">systemd</span>
+        <span data-i18n="features.systemd">Runs as system service, starts on boot</span>
+      </div>
+      <div class="feature">
+        <span class="feature-tag">~120KB</span>
+        <span data-i18n="features.lightweight">Pure Bash, no dependencies, ultra lightweight</span>
+      </div>
+      <div class="feature">
+        <span class="feature-tag">walrus update</span>
+        <span data-i18n="features.update">Self-update, no need to re-install</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- Commands -->
+  <section class="section commands">
+    <h2 data-i18n="commands.title">Commands</h2>
+    <div class="cmd-table">
+      <div class="cmd-row">
+        <code>walrus config</code>
+        <span data-i18n="commands.config">Configure remote storage</span>
+      </div>
+      <div class="cmd-row">
+        <code>walrus init</code>
+        <span data-i18n="commands.init">Register a project (interactive)</span>
+      </div>
+      <div class="cmd-row">
+        <code>walrus backup</code>
+        <span data-i18n="commands.backup">Run a full physical backup</span>
+      </div>
+      <div class="cmd-row">
+        <code>walrus sync</code>
+        <span data-i18n="commands.sync">Sync WAL logs to R2</span>
+      </div>
+      <div class="cmd-row">
+        <code>walrus restore</code>
+        <span data-i18n="commands.restore">Restore database from R2</span>
+      </div>
+      <div class="cmd-row">
+        <code>walrus status</code>
+        <span data-i18n="commands.status">Show project status</span>
+      </div>
+      <div class="cmd-row">
+        <code>walrus list</code>
+        <span data-i18n="commands.list">Show R2 backup details</span>
+      </div>
+      <div class="cmd-row">
+        <code>walrus logs</code>
+        <span data-i18n="commands.logs">View logs (-f for live tail)</span>
+      </div>
+      <div class="cmd-row">
+        <code>walrus update</code>
+        <span data-i18n="commands.update">Update to latest version</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- Architecture Diagram -->
+  <section class="section architecture">
+    <h2 data-i18n="arch.title">Architecture</h2>
+    <pre class="arch-diagram">
+Daily 03:00                              Every 5 min
+┌──────────────────┐                     ┌─────────────────┐
+│  pg_basebackup   │                     │  WAL archiving   │
+│  (full physical) │                     │  (incremental)   │
+└────────┬─────────┘                     └────────┬────────┘
+         │                                        │
+         │  --max-rate=30M                        │  new files only
+         │  --checkpoint=spread                   │  --checksum
+         ▼                                        ▼
+┌──────────────────────────────────────────────────────┐
+│               rclone (--bwlimit 2M)                  │
+└─────────────────────────┬────────────────────────────┘
+                          │
+                          ▼
+                 ┌─────────────────┐
+                 │  Cloudflare R2  │
+                 │  (S3 / MinIO)   │
+                 └─────────────────┘</pre>
+  </section>
+
+  <!-- Footer -->
+  <footer>
+    <div class="footer-inner">
+      <p>&copy; 2026 <a href="https://github.com/LayFz" target="_blank" rel="noopener">LayFz</a>. MIT License.</p>
+      <p>
+        <a href="https://github.com/LayFz/walrus" target="_blank" rel="noopener">GitHub</a>
+        &middot;
+        <a href="https://github.com/LayFz/walrus/releases" target="_blank" rel="noopener" data-i18n="footer.releases">Releases</a>
+        &middot;
+        <a href="https://github.com/LayFz/walrus/issues" target="_blank" rel="noopener" data-i18n="footer.issues">Issues</a>
+      </p>
+    </div>
+  </footer>
+
+  <script src="main.js"></script>
+</body>
+</html>
