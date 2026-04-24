@@ -134,6 +134,10 @@ pg_configure_wal_archive() {
 
   if [[ "$MODE" == "docker" ]]; then
     docker exec "$CONTAINER" mkdir -p "$wal_dir"
+    # Match ownership to PG data directory (works regardless of user name or UID)
+    local pg_data_dir
+    pg_data_dir=$(pg_exec_sql "SHOW data_directory;")
+    docker exec "$CONTAINER" sh -c "chown \$(stat -c '%u:%g' ${pg_data_dir} 2>/dev/null || stat -f '%u:%g' ${pg_data_dir}) ${wal_dir}"
   else
     mkdir -p "$wal_dir"
   fi
