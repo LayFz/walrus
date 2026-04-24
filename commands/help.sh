@@ -30,6 +30,7 @@ cmd_help() {
     ${C_CYAN}logs${C_RESET}      View logs                             ${C_DIM}walrus logs [-f]${C_RESET}
     ${C_CYAN}service${C_RESET}   Manage system services                ${C_DIM}walrus service status${C_RESET}
     ${C_CYAN}remove${C_RESET}    Remove a project                      ${C_DIM}walrus remove --project x${C_RESET}
+    ${C_CYAN}update${C_RESET}    Update walrus to latest version       ${C_DIM}walrus update${C_RESET}
 
   ${C_BOLD}Quick Start${C_RESET}
     1. walrus config              ${C_DIM}# Configure R2${C_RESET}

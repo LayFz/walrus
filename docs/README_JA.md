@@ -116,6 +116,7 @@ walrus init --mode direct \
 | `walrus logs` | ログを表示 (`-f` でリアルタイム追跡) |
 | `walrus service` | systemd サービスを管理 |
 | `walrus remove` | プロジェクトを削除 |
+| `walrus update` | walrus を最新版に更新 |
 
 > プロジェクトが1つだけ登録されている場合、`--project` は省略可能。エイリアス：`st`=status, `ls`=list, `rm`=remove
 

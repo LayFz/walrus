@@ -116,6 +116,7 @@ walrus init --mode direct \
 | `walrus logs` | Voir les logs (`-f` pour le suivi en direct) |
 | `walrus service` | Gerer les services systemd |
 | `walrus remove` | Supprimer un projet |
+| `walrus update` | Mettre a jour walrus |
 
 > Quand un seul projet est enregistre, `--project` peut etre omis. Alias : `st`=status, `ls`=list, `rm`=remove
 

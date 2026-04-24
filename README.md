@@ -118,6 +118,7 @@ walrus init --mode direct \
 | `walrus logs` | View logs (`-f` for live tail) |
 | `walrus service` | Manage systemd services |
 | `walrus remove` | Remove a project |
+| `walrus update` | Update walrus to latest version |
 | `walrus help` | Show help |
 
 > When only one project is registered, `--project` can be omitted. Aliases: `st`=status, `ls`=list, `rm`=remove, `svc`=service.

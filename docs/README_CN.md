@@ -116,6 +116,7 @@ walrus init --mode direct \
 | `walrus logs` | 查看日志 (`-f` 实时跟踪) |
 | `walrus service` | 管理 systemd 服务 |
 | `walrus remove` | 移除项目 |
+| `walrus update` | 更新 walrus 到最新版本 |
 
 > 只注册了一个项目时，`--project` 可省略。命令缩写：`st`=status, `ls`=list, `rm`=remove
 

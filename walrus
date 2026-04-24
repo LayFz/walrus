@@ -31,7 +31,7 @@ _walrus_resolve_root() {
     return
   fi
 
-  echo >&2 "walrus: 找不到 lib 目录，请重新安装: walrus help"
+  echo >&2 "walrus: cannot find lib directory, please reinstall"
   exit 1
 }
 
@@ -82,6 +82,8 @@ source "${WALRUS_ROOT}/commands/logs.sh"
 source "${WALRUS_ROOT}/commands/remove.sh"
 # shellcheck source=commands/service.sh
 source "${WALRUS_ROOT}/commands/service.sh"
+# shellcheck source=commands/update.sh
+source "${WALRUS_ROOT}/commands/update.sh"
 # shellcheck source=commands/help.sh
 source "${WALRUS_ROOT}/commands/help.sh"
 
@@ -102,12 +104,13 @@ main() {
     logs|log)              cmd_logs "$@" ;;
     service|svc)           cmd_service "$@" ;;
     remove|rm)             cmd_remove "$@" ;;
+    update)                cmd_update "$@" ;;
     help|-h|--help|"")     cmd_help ;;
     version|-v|--version)  echo "walrus v${WALRUS_VERSION}" ;;
     *)
-      log_err "未知命令: ${command}"
+      log_err "Unknown command: ${command}"
       echo ""
-      log_dim "运行 'walrus help' 查看可用命令"
+      log_dim "Run 'walrus help' for available commands"
       exit 1
       ;;
   esac
