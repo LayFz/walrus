@@ -28,16 +28,16 @@ cmd_config() {
 
     case "$choice" in
       q|Q) return ;;
-      1) _config_r2 && break ;;
-      2) _config_s3 && break ;;
-      3) _config_s3_compatible && break ;;
+      1) if _config_r2; then break; fi ;;
+      2) if _config_s3; then break; fi ;;
+      3) if _config_s3_compatible; then break; fi ;;
       4)
         if [[ -z "$existing_remotes" ]]; then
           log_err "No existing rclone remotes found"
           echo ""
           continue
         fi
-        _config_existing "$existing_remotes" && break
+        if _config_existing "$existing_remotes"; then break; fi
         ;;
       *) log_err "Invalid choice"; echo ""; continue ;;
     esac
@@ -128,7 +128,7 @@ _config_s3_compatible() {
     "endpoint=${endpoint}"
     "no_check_bucket=true"
   )
-  [[ -n "$region" ]] && params+=("region=${region}")
+  [[ -n "$region" ]] && params+=("region=${region}") || true
 
   _config_bucket_and_verify "${params[@]}"
 }
@@ -232,7 +232,7 @@ _write_remote() {
   # Append new section directly to config file
   local has_type=false
   for param in "$@"; do
-    [[ "${param%%=*}" == "type" ]] && has_type=true
+    [[ "${param%%=*}" == "type" ]] && has_type=true || true
   done
 
   {

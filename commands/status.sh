@@ -77,7 +77,9 @@ cmd_status() {
     fi
 
     local r2_count="-"
-    $r2_ok && r2_count=$(rclone lsf "${R2_REMOTE}:${R2_BUCKET}/${proj}/base/" 2>/dev/null | wc -l | xargs)
+    if $r2_ok; then
+      r2_count=$(rclone lsf "${R2_REMOTE}:${R2_BUCKET}/${proj}/base/" 2>/dev/null | wc -l | xargs)
+    fi
 
     local wal_count
     wal_count=$(find "${WALRUS_DATA_DIR}/wal/${proj}" -type f 2>/dev/null | wc -l | xargs)

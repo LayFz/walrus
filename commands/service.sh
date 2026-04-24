@@ -169,7 +169,7 @@ cmd_service() {
         if systemctl is-active "walrus-sync@${proj}.timer" &>/dev/null; then
           sync_status="${C_GREEN}●${C_RESET} Active"
           sync_next=$(systemctl show "walrus-sync@${proj}.timer" --property=NextElapseUSecRealtime --value 2>/dev/null | head -1)
-          [[ -n "$sync_next" ]] && sync_next=" -> Next: ${C_DIM}${sync_next}${C_RESET}"
+          [[ -n "$sync_next" ]] && sync_next=" -> Next: ${C_DIM}${sync_next}${C_RESET}" || true
         else
           sync_status="${C_RED}●${C_RESET} Inactive"
           sync_next=""
@@ -180,7 +180,7 @@ cmd_service() {
         if systemctl is-active "walrus-backup@${proj}.timer" &>/dev/null; then
           backup_status="${C_GREEN}●${C_RESET} Active"
           backup_next=$(systemctl show "walrus-backup@${proj}.timer" --property=NextElapseUSecRealtime --value 2>/dev/null | head -1)
-          [[ -n "$backup_next" ]] && backup_next=" -> Next: ${C_DIM}${backup_next}${C_RESET}"
+          [[ -n "$backup_next" ]] && backup_next=" -> Next: ${C_DIM}${backup_next}${C_RESET}" || true
         else
           backup_status="${C_RED}●${C_RESET} Inactive"
           backup_next=""

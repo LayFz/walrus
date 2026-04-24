@@ -22,8 +22,8 @@ cmd_logs() {
 
   # Collect existing log files
   local log_files=()
-  [[ -f "$backup_log" ]] && log_files+=("$backup_log")
-  [[ -f "$sync_log" ]] && log_files+=("$sync_log")
+  [[ -f "$backup_log" ]] && log_files+=("$backup_log") || true
+  [[ -f "$sync_log" ]] && log_files+=("$sync_log") || true
 
   if [[ ${#log_files[@]} -eq 0 ]]; then
     log_warn "No logs found, backups may not have run yet"
