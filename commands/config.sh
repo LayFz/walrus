@@ -155,9 +155,6 @@ _config_existing() {
 
   if [[ "$selected" != "${WALRUS_R2_REMOTE}" ]]; then
     rclone config delete "${WALRUS_R2_REMOTE}" >/dev/null 2>&1 || true
-    local conf_dir
-    conf_dir="$(dirname "$RCLONE_CONFIG")"
-    mkdir -p "$conf_dir"
     rclone config create "${WALRUS_R2_REMOTE}" alias remote="${selected}:" >/dev/null 2>&1
   fi
 
@@ -197,10 +194,12 @@ _config_bucket_and_verify() {
   _write_remote "${params[@]}"
 
   if ! r2_check_connection; then
-    rclone config delete "${WALRUS_R2_REMOTE}" >/dev/null 2>&1
     log_err "Connection failed, please check credentials and endpoint"
+    log_dim "Config saved to: ${RCLONE_CONFIG}"
+    log_dim "Test manually: rclone lsd ${WALRUS_R2_REMOTE}: -vv"
     echo ""
     if confirm "Re-enter?"; then
+      rclone config delete "${WALRUS_R2_REMOTE}" >/dev/null 2>&1 || true
       echo ""
       return 1
     fi
@@ -217,19 +216,16 @@ _config_bucket_and_verify() {
 # ── Write rclone remote config ──
 
 _write_remote() {
-  local conf_dir
-  conf_dir="$(dirname "$RCLONE_CONFIG")"
-  mkdir -p "$conf_dir"
-
-  if [[ -f "$RCLONE_CONFIG" ]] && [[ ! -w "$RCLONE_CONFIG" ]]; then
-    die "Cannot write config: ${RCLONE_CONFIG}\n   Fix permissions: sudo chown \$(whoami) ${RCLONE_CONFIG}"
-  fi
-
   rclone config delete "${WALRUS_R2_REMOTE}" >/dev/null 2>&1 || true
 
   # shellcheck disable=SC2068
   rclone config create "${WALRUS_R2_REMOTE}" s3 $@ >/dev/null 2>&1 \
-    || die "Config write failed, check permissions: ${RCLONE_CONFIG}"
+    || die "Config write failed, check permissions: $(rclone config file 2>/dev/null | tail -1)"
+
+  # Verify the section was actually written
+  if ! rclone listremotes 2>/dev/null | grep -q "^${WALRUS_R2_REMOTE}:$"; then
+    die "Config write failed, remote '${WALRUS_R2_REMOTE}' not found after create"
+  fi
 }
 
 _config_done() {

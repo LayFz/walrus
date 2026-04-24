@@ -53,6 +53,15 @@ curl -sSL https://raw.githubusercontent.com/LayFz/walrus/main/install.sh | WALRU
 
 インストーラーは `postgresql-client` が未インストールの場合、自動でセットアップします。
 
+### アップデート
+
+```bash
+# 最新版に更新（インストールと同じコマンド）
+curl -sSL https://raw.githubusercontent.com/LayFz/walrus/main/install.sh | sudo bash
+```
+
+既存のプロジェクト設定と rclone の設定は更新時に保持されます。
+
 ### セットアップ
 
 ```bash

@@ -22,13 +22,9 @@ readonly WALRUS_LOCK_DIR="${WALRUS_HOME}/locks"
 # R2
 readonly WALRUS_R2_REMOTE="walrus_r2"
 
-# Rclone config: respect user's existing RCLONE_CONFIG > default location > walrus own
-if [[ -n "${RCLONE_CONFIG:-}" ]] && [[ -f "$RCLONE_CONFIG" ]]; then
-  : # User-configured, keep as-is
-elif [[ -f "${HOME}/.config/rclone/rclone.conf" ]]; then
-  export RCLONE_CONFIG="${HOME}/.config/rclone/rclone.conf"
-else
-  export RCLONE_CONFIG="${WALRUS_HOME}/conf/rclone.conf"
+# Rclone config: use rclone's default config path unless user has set RCLONE_CONFIG
+if [[ -z "${RCLONE_CONFIG:-}" ]]; then
+  export RCLONE_CONFIG="$(rclone config file 2>/dev/null | tail -1 || echo "${HOME}/.config/rclone/rclone.conf")"
 fi
 
 # Defaults
