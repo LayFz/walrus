@@ -28,7 +28,8 @@ cmd_backup() {
   _blog() { ts_log "$PROJECT" "$1" "$logfile"; }
 
   # ── Base backup (output to local temp dir) ──
-  local tmp_dir="/tmp/walrus_backup_${PROJECT}"
+  local tmp_dir
+  tmp_dir=$(mktemp -d "/tmp/walrus_backup_${PROJECT}.XXXXXX")
 
   _blog "Starting base backup..."
   if ! pg_run_basebackup "$tmp_dir"; then
@@ -53,11 +54,25 @@ cmd_backup() {
   fi
   _blog "Upload complete"
 
-  # ── Sync WAL ──
+  # ── Sync WAL (copy from container/archive first, then upload) ──
+  if [[ "$MODE" == "docker" ]]; then
+    docker cp "$CONTAINER:${WALRUS_CONTAINER_WAL_DIR}/." "$wal_dir/" 2>/dev/null || true
+  else
+    local wal_archive_dir="${WALRUS_DATA_DIR}/wal_archive/${PROJECT}"
+    cp -f "${wal_archive_dir}"/* "$wal_dir/" 2>/dev/null || true
+  fi
+
   if [[ -d "$wal_dir" ]] && [[ -n "$(ls -A "$wal_dir" 2>/dev/null)" ]]; then
     _blog "Syncing WAL..."
-    rclone copy "${wal_dir}/" "${r2_path}/wal/" --bwlimit "$BWLIMIT" --checksum
-    _blog "WAL synced"
+    if rclone copy "${wal_dir}/" "${r2_path}/wal/" --bwlimit "$BWLIMIT" --checksum; then
+      # Upload succeeded, clean up source
+      if [[ "$MODE" == "docker" ]]; then
+        docker exec "$CONTAINER" sh -c "rm -f ${WALRUS_CONTAINER_WAL_DIR}/*" 2>/dev/null || true
+      else
+        rm -f "${wal_archive_dir}"/* 2>/dev/null || true
+      fi
+      _blog "WAL synced"
+    fi
   fi
 
   # ── Cleanup (always keep at least 1 backup) ──

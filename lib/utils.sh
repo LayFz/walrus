@@ -64,3 +64,8 @@ validate_project_name() {
   local name="$1"
   [[ "$name" =~ ^[a-zA-Z0-9_-]+$ ]] || die "Project name may only contain letters, numbers, underscores and hyphens"
 }
+
+validate_container_name() {
+  local name="$1"
+  [[ "$name" =~ ^[a-zA-Z0-9][a-zA-Z0-9_.-]*$ ]] || die "Invalid container name: '${name}'"
+}

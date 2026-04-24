@@ -63,6 +63,7 @@ list_all_projects() {
 save_project_conf() {
   local project="$1" mode="$2" db_user="$3" db_name="$4"
   local bwlimit="$5" days_keep="$6" r2_bucket="$7"
+  local pg_ver="${8:-}"
 
   mkdir -p "${WALRUS_CONF_DIR}"
   chmod 0700 "${WALRUS_CONF_DIR}"
@@ -72,8 +73,6 @@ save_project_conf() {
 # Generated: $(date '+%Y-%m-%d %H:%M:%S')
 PROJECT="${project}"
 MODE="${mode}"
-DB_HOST="${DB_HOST:-localhost}"
-DB_PORT="${DB_PORT:-5432}"
 DB_USER="${db_user}"
 DB_NAME="${db_name}"
 DB_PASS="${DB_PASS}"
@@ -81,11 +80,17 @@ BWLIMIT="${bwlimit}"
 DAYS_KEEP=${days_keep}
 R2_REMOTE="${WALRUS_R2_REMOTE}"
 R2_BUCKET="${r2_bucket}"
+PG_MAJOR="${pg_ver%%.*}"
 CONF
 
   if [[ "$mode" == "docker" ]]; then
     cat >> "$_conf_file" <<CONF
 CONTAINER="${CONTAINER}"
+CONF
+  else
+    cat >> "$_conf_file" <<CONF
+DB_HOST="${DB_HOST:-localhost}"
+DB_PORT="${DB_PORT:-5432}"
 CONF
   fi
 

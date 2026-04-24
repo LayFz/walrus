@@ -44,15 +44,25 @@ _find_pg_bin() {
 }
 
 _psql() {
-  PGPASSWORD="${DB_PASS}" "${_pg_bin}/psql" \
-    -h "${DB_HOST:-localhost}" -p "${DB_PORT:-5432}" \
-    -U "$DB_USER" -d "$DB_NAME" "$@"
+  if [[ "$MODE" == "docker" ]]; then
+    docker exec -e PGPASSWORD="${DB_PASS}" "$CONTAINER" \
+      psql -h localhost -p 5432 -U "$DB_USER" -d "$DB_NAME" "$@"
+  else
+    PGPASSWORD="${DB_PASS}" "${_pg_bin}/psql" \
+      -h "${DB_HOST:-localhost}" -p "${DB_PORT:-5432}" \
+      -U "$DB_USER" -d "$DB_NAME" "$@"
+  fi
 }
 
 _pg_basebackup() {
-  PGPASSWORD="${DB_PASS}" "${_pg_bin}/pg_basebackup" \
-    -h "${DB_HOST:-localhost}" -p "${DB_PORT:-5432}" \
-    -U "$DB_USER" "$@"
+  if [[ "$MODE" == "docker" ]]; then
+    docker exec -e PGPASSWORD="${DB_PASS}" "$CONTAINER" \
+      pg_basebackup -h localhost -p 5432 -U "$DB_USER" "$@"
+  else
+    PGPASSWORD="${DB_PASS}" "${_pg_bin}/pg_basebackup" \
+      -h "${DB_HOST:-localhost}" -p "${DB_PORT:-5432}" \
+      -U "$DB_USER" "$@"
+  fi
 }
 
 # ─── Execute SQL ─────────────────────────────────────────
@@ -84,9 +94,29 @@ pg_get_version() {
 pg_run_basebackup() {
   local output_dir="$1"
   rm -rf "$output_dir" && mkdir -p "$output_dir"
-  _pg_basebackup -D "$output_dir" -Ft -z \
-    --checkpoint=spread \
-    --max-rate="${WALRUS_DEFAULT_MAX_RATE}"
+
+  if [[ "$MODE" == "docker" ]]; then
+    local container_tmp="/tmp/walrus_basebackup"
+    docker exec "$CONTAINER" rm -rf "$container_tmp"
+    docker exec "$CONTAINER" mkdir -p "$container_tmp"
+
+    if ! _pg_basebackup -D "$container_tmp" -Ft -z \
+      --checkpoint=spread \
+      --max-rate="${WALRUS_DEFAULT_MAX_RATE}"; then
+      docker exec "$CONTAINER" rm -rf "$container_tmp"
+      return 1
+    fi
+
+    if ! docker cp "$CONTAINER:${container_tmp}/base.tar.gz" "${output_dir}/base.tar.gz"; then
+      docker exec "$CONTAINER" rm -rf "$container_tmp"
+      return 1
+    fi
+    docker exec "$CONTAINER" rm -rf "$container_tmp"
+  else
+    _pg_basebackup -D "$output_dir" -Ft -z \
+      --checkpoint=spread \
+      --max-rate="${WALRUS_DEFAULT_MAX_RATE}"
+  fi
 }
 
 # ─── Configure WAL archiving ────────────────────────────
@@ -154,11 +184,6 @@ pg_switch_wal() {
 # ─── Environment check ──────────────────────────────────
 
 pg_check_environment() {
-  if ! _find_pg_bin; then
-    die "PostgreSQL client tools (psql) not found, please install postgresql-client"
-  fi
-  log_ok "PostgreSQL client (${_pg_bin})"
-
   if [[ "$MODE" == "docker" ]]; then
     require_cmd docker
     if ! docker ps --format '{{.Names}}' | grep -q "^${CONTAINER}$"; then
@@ -169,5 +194,15 @@ pg_check_environment() {
       exit 1
     fi
     log_ok "Container '${CONTAINER}'"
+
+    if ! docker exec "$CONTAINER" which pg_basebackup &>/dev/null; then
+      die "pg_basebackup not found in container '${CONTAINER}'"
+    fi
+    log_ok "PostgreSQL tools (in container)"
+  else
+    if ! _find_pg_bin; then
+      die "PostgreSQL client tools (psql) not found, please install postgresql-client"
+    fi
+    log_ok "PostgreSQL client (${_pg_bin})"
   fi
 }

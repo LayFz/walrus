@@ -102,8 +102,6 @@ cmd_init() {
         fi
         [[ -n "$PROJECT" ]]   || { ask "Project name (e.g. myapp)" ""; PROJECT="$REPLY"; }
         [[ -n "$CONTAINER" ]] || { ask "PostgreSQL container name" ""; CONTAINER="$REPLY"; }
-        ask "Database host" "$DB_HOST"; DB_HOST="$REPLY"
-        ask "Mapped port" "$DB_PORT"; DB_PORT="$REPLY"
         [[ -n "$DB_USER" ]]   || { ask "Database user" "postgres"; DB_USER="$REPLY"; }
         [[ -n "$DB_PASS" ]]   || { ask "Database password" ""; DB_PASS="$REPLY"; }
         [[ -n "$DB_NAME" ]]   || { ask "Database name" "$PROJECT"; DB_NAME="$REPLY"; }
@@ -134,12 +132,16 @@ cmd_init() {
   R2_BUCKET="${R2_BUCKET:-$(r2_default_bucket)}"
 
   [[ -n "$PROJECT" ]]  || die "Project name cannot be empty"
-  [[ -n "$DB_HOST" ]]  || die "Database host cannot be empty"
   [[ -n "$DB_USER" ]]  || die "Username cannot be empty"
   [[ -n "$DB_NAME" ]]  || die "Database name cannot be empty"
   validate_project_name "$PROJECT"
 
-  [[ "$MODE" == "docker" ]] && [[ -z "$CONTAINER" ]] && die "Container name cannot be empty"
+  if [[ "$MODE" == "docker" ]]; then
+    [[ -n "$CONTAINER" ]] || die "Container name cannot be empty"
+    validate_container_name "$CONTAINER"
+  else
+    [[ -n "$DB_HOST" ]] || die "Database host cannot be empty"
+  fi
 
   # Check for duplicate project name
   if [[ -f "${WALRUS_CONF_DIR}/${PROJECT}.conf" ]]; then
@@ -156,7 +158,7 @@ cmd_init() {
 
   local mode_label
   case "$MODE" in
-    docker) mode_label="Docker: ${CONTAINER} -> ${DB_HOST}:${DB_PORT}" ;;
+    docker) mode_label="Docker: ${CONTAINER}" ;;
     direct) mode_label="${DB_HOST}:${DB_PORT}" ;;
   esac
 
@@ -191,7 +193,7 @@ cmd_init() {
   # ── Save config ──
 
   save_project_conf "$PROJECT" "$MODE" "$DB_USER" "$DB_NAME" \
-    "$BWLIMIT" "$DAYS_KEEP" "$R2_BUCKET"
+    "$BWLIMIT" "$DAYS_KEEP" "$R2_BUCKET" "$pg_ver"
 
   # ── WAL archiving ──
 

@@ -119,14 +119,15 @@ recovery_target = 'immediate'"
   local restore_name="walrus_${PROJECT}_restore"
   docker rm -f "$restore_name" 2>/dev/null || true
 
-  log_run "Starting database..."
+  local pg_image="postgres:${PG_MAJOR:-16}"
+  log_run "Starting database (${pg_image})..."
   docker run -d \
     --name "$restore_name" \
     -v "${work_dir}/pgdata:/var/lib/postgresql/data" \
     -e POSTGRES_USER="$DB_USER" \
     -e POSTGRES_PASSWORD="$db_pass" \
     -p 15432:5432 \
-    postgres:16 >/dev/null
+    "$pg_image" >/dev/null
 
   # Wait for ready
   log_run "Waiting for database to be ready..."
