@@ -139,26 +139,28 @@ walrus service start
 
 ## 第六步：恢复（从任意机器）
 
-恢复可以在**任何安装了 walrus 和 Docker 的机器**上进行——即使是全新的服务器。只要能连接 R2，就能恢复数据。
+恢复可以在**任何安装了 walrus 和 Docker 的机器**上进行——即使是全新的服务器。你只需要 **R2 密钥**：walrus 会从 R2 读取项目信息、从备份本身读取 PostgreSQL 版本，无需拷贝任何配置文件，也无需在恢复机上运行 `walrus init`。
 
 ```bash
-# 在新机器上：安装 walrus 并配置 R2
+# 在新机器上：安装 walrus 并配置同一把 R2 密钥
 curl -sSL https://raw.githubusercontent.com/LayFz/walrus/main/install.sh | sudo bash
 walrus config
 
-# 交互式恢复（选择备份、输入密码）
+# 交互式恢复（先选项目，再选备份）
 walrus restore
 
-# 或恢复到指定时间点
-walrus restore --project myapp --password secret \
-  --target-time "2026-04-23 14:30:00+08"
+# 或直接指定项目 / 时间点
+walrus restore --project myapp
+walrus restore --project myapp --target-time "2026-04-23 14:30:00+08"
 ```
 
+> 无需密码——恢复出的集群保留原始凭据。若所选备份没有数据，walrus 会发出警告，方便你改选更早的一份。
+
 恢复流程：
-1. 从 R2 下载全量备份 + WAL 文件
+1. 从 R2 读取项目信息（PostgreSQL 版本来自备份本身），然后下载全量备份 + WAL 文件
 2. 启动临时 Docker 容器（端口 15432），使用匹配的 PostgreSQL 版本
 3. 应用 WAL 回放实现时间点恢复
-4. 你验证数据：`docker exec -it walrus_myapp_restore psql -U myuser -d mydb`
+4. 你验证数据：`docker exec -it walrus_myapp_restore psql -U <数据库用户> -d <数据库名>`
 5. 确认无误后，迁移数据到生产环境
 
 ## 命令一览

@@ -139,26 +139,28 @@ walrus service start
 
 ## ステップ 6：リストア（任意のマシンから）
 
-リストアは **walrus と Docker がインストールされた任意のマシン** で実行可能 — 新しいサーバーでも可能です。R2 に接続できれば、データを復旧できます。
+リストアは **walrus と Docker がインストールされた任意のマシン** で実行可能 — 新しいサーバーでも可能です。必要なのは **R2 キーだけ**：walrus はプロジェクト情報を R2 から、PostgreSQL バージョンをバックアップ自体から読み取るため、設定ファイルのコピーもリストア先での `walrus init` も不要です。
 
 ```bash
-# 新しいマシンで：walrus をインストールし R2 を設定
+# 新しいマシンで：walrus をインストールし、同じ R2 キーを設定
 curl -sSL https://raw.githubusercontent.com/LayFz/walrus/main/install.sh | sudo bash
 walrus config
 
-# 対話式リストア（バックアップを選択、パスワードを入力）
+# 対話式リストア（プロジェクトを選び、次にバックアップを選択）
 walrus restore
 
-# または特定の時点にリストア
-walrus restore --project myapp --password secret \
-  --target-time "2026-04-23 14:30:00+08"
+# またはプロジェクト / 時点を直接指定
+walrus restore --project myapp
+walrus restore --project myapp --target-time "2026-04-23 14:30:00+08"
 ```
 
+> パスワードは不要です — リストアされたクラスタは元の認証情報を保持します。選んだバックアップにデータがない場合は警告が表示され、より古いものを選び直せます。
+
 リストアプロセス：
-1. R2 からフルバックアップ + WAL ファイルをダウンロード
+1. R2 からプロジェクト情報を読み取り（PostgreSQL バージョンはバックアップから）、フルバックアップ + WAL ファイルをダウンロード
 2. 一致する PostgreSQL バージョンで一時 Docker コンテナを起動（ポート 15432）
 3. WAL リプレイでポイントインタイムリカバリを適用
-4. データを検証：`docker exec -it walrus_myapp_restore psql -U myuser -d mydb`
+4. データを検証：`docker exec -it walrus_myapp_restore psql -U <DBユーザー> -d <DB名>`
 5. 確認後、本番環境にデータを移行
 
 ## コマンド一覧

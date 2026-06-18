@@ -140,26 +140,28 @@ walrus service start
 
 ## Step 6: Restore (from any machine)
 
-Restore works on **any machine** with walrus and Docker installed — even a brand new server. As long as you can connect to R2, you can recover your data.
+Restore works on **any machine** with walrus and Docker installed — even a brand new server. You only need the **R2 key**: walrus reads the project metadata from R2 and the PostgreSQL version from the backup itself, so there are no config files to copy and no `walrus init` to run on the restore machine.
 
 ```bash
-# On the new machine: install walrus and configure R2
+# On the new machine: install walrus and configure the same R2 key
 curl -sSL https://raw.githubusercontent.com/LayFz/walrus/main/install.sh | sudo bash
 walrus config
 
-# Interactive restore (select backup, enter password)
+# Interactive restore (pick the project, then the backup)
 walrus restore
 
-# Or restore to a specific point in time
-walrus restore --project myapp --password secret \
-  --target-time "2026-04-23 14:30:00+08"
+# Or target a project / a point in time directly
+walrus restore --project myapp
+walrus restore --project myapp --target-time "2026-04-23 14:30:00+08"
 ```
 
+> No password is needed — the restored cluster keeps its original credentials. If the chosen backup contains no data, walrus warns you so you can pick an earlier one.
+
 Restore process:
-1. Downloads base backup + WAL files from R2
-2. Spins up a temporary Docker container (port 15432) with matching PostgreSQL version
+1. Reads project metadata from R2 (PostgreSQL version comes from the backup), then downloads the base backup + WAL files
+2. Spins up a temporary Docker container (port 15432) with the matching PostgreSQL version
 3. Applies WAL replay for point-in-time recovery
-4. You verify the data: `docker exec -it walrus_myapp_restore psql -U myuser -d mydb`
+4. You verify the data: `docker exec -it walrus_myapp_restore psql -U <db_user> -d <db_name>`
 5. Once confirmed, migrate data to production
 
 ## Commands

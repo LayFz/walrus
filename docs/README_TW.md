@@ -139,26 +139,28 @@ walrus service start
 
 ## 第六步：還原（從任意機器）
 
-還原可以在**任何安裝了 walrus 和 Docker 的機器**上進行——即使是全新的伺服器。只要能連線 R2，就能還原資料。
+還原可以在**任何安裝了 walrus 和 Docker 的機器**上進行——即使是全新的伺服器。你只需要 **R2 金鑰**：walrus 會從 R2 讀取專案資訊、從備份本身讀取 PostgreSQL 版本，無需複製任何設定檔，也無需在還原機上執行 `walrus init`。
 
 ```bash
-# 在新機器上：安裝 walrus 並設定 R2
+# 在新機器上：安裝 walrus 並設定同一把 R2 金鑰
 curl -sSL https://raw.githubusercontent.com/LayFz/walrus/main/install.sh | sudo bash
 walrus config
 
-# 互動式還原（選擇備份、輸入密碼）
+# 互動式還原（先選專案，再選備份）
 walrus restore
 
-# 或還原到指定時間點
-walrus restore --project myapp --password secret \
-  --target-time "2026-04-23 14:30:00+08"
+# 或直接指定專案 / 時間點
+walrus restore --project myapp
+walrus restore --project myapp --target-time "2026-04-23 14:30:00+08"
 ```
 
+> 無需密碼——還原出的叢集保留原始憑證。若所選備份沒有資料，walrus 會發出警告，方便你改選更早的一份。
+
 還原流程：
-1. 從 R2 下載全量備份 + WAL 檔案
+1. 從 R2 讀取專案資訊（PostgreSQL 版本來自備份本身），然後下載全量備份 + WAL 檔案
 2. 啟動臨時 Docker 容器（埠 15432），使用匹配的 PostgreSQL 版本
 3. 套用 WAL 回放實現時間點還原
-4. 你驗證資料：`docker exec -it walrus_myapp_restore psql -U myuser -d mydb`
+4. 你驗證資料：`docker exec -it walrus_myapp_restore psql -U <資料庫使用者> -d <資料庫名>`
 5. 確認無誤後，遷移資料到正式環境
 
 ## 指令一覽
