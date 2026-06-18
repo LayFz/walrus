@@ -54,6 +54,24 @@ cmd_backup() {
   fi
   _blog "Upload complete"
 
+  # ── Upload a non-secret manifest so restore works from the key alone ──
+  # No DB_PASS here: restore never needs it, and we don't want secrets on R2.
+  # Best-effort: a failure here must never fail an otherwise-good backup.
+  local _manifest=""
+  if _manifest=$(mktemp_tracked 2>/dev/null) && [[ -n "$_manifest" ]]; then
+    {
+      cat > "$_manifest" <<MANIFEST
+PROJECT="${PROJECT}"
+DB_USER="${DB_USER}"
+DB_NAME="${DB_NAME}"
+R2_BUCKET="${R2_BUCKET}"
+PG_MAJOR="${PG_MAJOR:-}"
+MANIFEST
+      rclone copyto "$_manifest" "${r2_path}/walrus.conf" --checksum
+    } 2>/dev/null || true
+    rm -f "$_manifest"
+  fi
+
   # ── Sync WAL (copy from container/archive first, then upload) ──
   if [[ "$MODE" == "docker" ]]; then
     docker cp "$CONTAINER:${WALRUS_CONTAINER_WAL_DIR}/." "$wal_dir/" 2>/dev/null || true

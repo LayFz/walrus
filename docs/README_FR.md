@@ -139,26 +139,28 @@ walrus service start
 
 ## Etape 6 : Restauration (depuis n'importe quelle machine)
 
-La restauration fonctionne sur **n'importe quelle machine** avec walrus et Docker installes — meme un tout nouveau serveur. Tant que vous pouvez vous connecter a R2, vous pouvez recuperer vos donnees.
+La restauration fonctionne sur **n'importe quelle machine** avec walrus et Docker installes — meme un tout nouveau serveur. Vous avez seulement besoin de la **cle R2** : walrus lit les metadonnees du projet depuis R2 et la version PostgreSQL depuis la sauvegarde elle-meme, donc aucun fichier de configuration a copier et aucun `walrus init` a executer sur la machine de restauration.
 
 ```bash
-# Sur la nouvelle machine : installer walrus et configurer R2
+# Sur la nouvelle machine : installer walrus et configurer la meme cle R2
 curl -sSL https://raw.githubusercontent.com/LayFz/walrus/main/install.sh | sudo bash
 walrus config
 
-# Restauration interactive (selectionner la sauvegarde, entrer le mot de passe)
+# Restauration interactive (choisir le projet, puis la sauvegarde)
 walrus restore
 
-# Ou restaurer a un point dans le temps specifique
-walrus restore --project myapp --password secret \
-  --target-time "2026-04-23 14:30:00+08"
+# Ou cibler directement un projet / un point dans le temps
+walrus restore --project myapp
+walrus restore --project myapp --target-time "2026-04-23 14:30:00+08"
 ```
 
+> Aucun mot de passe n'est requis — le cluster restaure conserve ses identifiants d'origine. Si la sauvegarde choisie ne contient aucune donnee, walrus vous avertit pour que vous puissiez en choisir une plus ancienne.
+
 Processus de restauration :
-1. Telecharge la sauvegarde complete + les fichiers WAL depuis R2
+1. Lit les metadonnees du projet depuis R2 (la version PostgreSQL vient de la sauvegarde), puis telecharge la sauvegarde complete + les fichiers WAL
 2. Demarre un conteneur Docker temporaire (port 15432) avec la version PostgreSQL correspondante
 3. Applique le rejeu WAL pour la restauration point-in-time
-4. Vous verifiez les donnees : `docker exec -it walrus_myapp_restore psql -U myuser -d mydb`
+4. Vous verifiez les donnees : `docker exec -it walrus_myapp_restore psql -U <db_user> -d <db_name>`
 5. Une fois confirme, migrez les donnees en production
 
 ## Commandes
